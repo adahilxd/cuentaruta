@@ -15,7 +15,7 @@ export default async function Dashboard() {
   const saludo = hora < 12 ? "Buenos días" : hora < 19 ? "Buenas tardes" : "Buenas noches";
 
   const modulos = [
-    { icon: Navigation, label: "Trayectos", desc: "Registra y gestiona tus rutas", color: "var(--accent-green)", dim: "var(--accent-green-dim)", href: "/dashboard/trayectos", ready: false },
+    { icon: Navigation, label: "Trayectos", desc: "Registra y gestiona tus rutas", color: "var(--accent-green)", dim: "var(--accent-green-dim)", href: "/dashboard/trayectos", ready: true },
     { icon: Wallet, label: "Viáticos", desc: "ACPM, peajes, alimentación y más", color: "var(--accent-yellow)", dim: "var(--accent-yellow-dim)", href: "/dashboard/viaticos", ready: false },
     { icon: FileWarning, label: "Documentos", desc: "SOAT, póliza, licencia y alertas", color: "var(--accent-red)", dim: "var(--accent-red-dim)", href: "/dashboard/documentos", ready: false },
     { icon: BarChart2, label: "Dashboard", desc: "KPIs y gráfica de ingresos", color: "var(--accent-blue)", dim: "var(--accent-blue-dim)", href: "/dashboard", ready: false },
@@ -110,21 +110,26 @@ export default async function Dashboard() {
           </h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14 }}>
             {modulos.map((m) => (
-              <div
-                key={m.label}
-                className="module-card"
-              >
-                {!m.ready && (
+              m.ready ? (
+                <Link key={m.label} href={m.href} className="module-card">
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: m.dim, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+                    <m.icon size={20} color={m.color} strokeWidth={1.5} />
+                  </div>
+                  <p style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: 4, color: "var(--text-primary)" }}>{m.label}</p>
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>{m.desc}</p>
+                </Link>
+              ) : (
+                <div key={m.label} className="module-card">
                   <span style={{ position: "absolute", top: 12, right: 12, background: "var(--glass-bg)", border: "1px solid var(--glass-border)", borderRadius: 100, padding: "2px 8px", fontSize: "0.65rem", fontWeight: 700, color: "var(--text-tertiary)" }}>
                     Próximamente
                   </span>
-                )}
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: m.dim, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-                  <m.icon size={20} color={m.color} strokeWidth={1.5} />
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: m.dim, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+                    <m.icon size={20} color={m.color} strokeWidth={1.5} />
+                  </div>
+                  <p style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: 4 }}>{m.label}</p>
+                  <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>{m.desc}</p>
                 </div>
-                <p style={{ fontWeight: 700, fontSize: "0.95rem", marginBottom: 4 }}>{m.label}</p>
-                <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>{m.desc}</p>
-              </div>
+              )
             ))}
           </div>
         </div>
