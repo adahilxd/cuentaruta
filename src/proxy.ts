@@ -32,7 +32,8 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const authPages = ["/login", "/registro", "/recuperar"];
   const isAuthPage = authPages.includes(pathname);
-  const isDashboard = pathname.startsWith("/dashboard");
+  const protectedRoutes = ["/dashboard", "/trayectos", "/viaticos", "/flujo", "/documentos", "/liquidacion", "/plan", "/configuracion"];
+  const isDashboard = protectedRoutes.some(r => pathname === r || pathname.startsWith(r + "/"));
 
   // Protege el dashboard — redirige a login si no hay sesión
   if (isDashboard && !user) {

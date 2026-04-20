@@ -1,0 +1,39 @@
+-- ================================================================
+-- CuentaRuta — Crear usuario de prueba Nelson R.
+-- ================================================================
+-- PASO 1: Ir a Supabase Dashboard → Authentication → Users → Add User
+--   Email:    adahilsoto1@gmail.com
+--   Password: CuentaRuta2026
+--   ✅ Auto Confirm User: activado
+--
+-- PASO 2: El trigger on_auth_user_created crea automáticamente
+--   el registro en cr_usuarios con id = auth.users.id
+--
+-- PASO 3: Ejecutar seed.sql en SQL Editor para poblar los datos
+--
+-- ────────────────────────────────────────────────────────────────
+-- ALTERNATIVA vía SQL (requiere service_role):
+-- ────────────────────────────────────────────────────────────────
+-- Si tienes acceso a la función admin, puedes crear el usuario así:
+--
+-- SELECT auth.create_user(
+--   '{"email": "adahilsoto1@gmail.com", "password": "CuentaRuta2026", "email_confirmed": true}'::jsonb
+-- );
+--
+-- ────────────────────────────────────────────────────────────────
+-- SCHEMA: Agregar columna moneda para multi-moneda (FUTURO)
+-- Ejecutar cuando se implemente multi-moneda:
+-- ────────────────────────────────────────────────────────────────
+-- ALTER TABLE cr_usuarios ADD COLUMN IF NOT EXISTS moneda text DEFAULT 'COP';
+--
+-- ────────────────────────────────────────────────────────────────
+-- VERIFICACIÓN: Después de ejecutar el seed, comprueba con:
+-- ────────────────────────────────────────────────────────────────
+-- SELECT u.nombre, u.empresa, u.rol, u.plan,
+--        (SELECT count(*) FROM cr_trayectos WHERE conductor_id = u.id) AS trayectos,
+--        (SELECT count(*) FROM cr_viaticos   WHERE conductor_id = u.id) AS viaticos,
+--        (SELECT count(*) FROM cr_flujo      WHERE conductor_id = u.id) AS flujo_semanas,
+--        (SELECT count(*) FROM cr_documentos WHERE conductor_id = u.id) AS documentos
+-- FROM cr_usuarios u
+-- JOIN auth.users a ON a.id = u.id
+-- WHERE a.email = 'adahilsoto1@gmail.com';

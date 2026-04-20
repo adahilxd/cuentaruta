@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Route, Eye, EyeOff, ArrowRight, Check } from "lucide-react";
+import { Route, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +45,6 @@ export default function Registro() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [sent, setSent] = useState(false);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -71,7 +70,6 @@ export default function Registro() {
       password: form.password,
       options: {
         data: { nombre: form.nombre, plan },
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
       },
     });
 
@@ -86,38 +84,8 @@ export default function Registro() {
       return;
     }
 
-    setSent(true);
-  }
-
-  if (sent) {
-    return (
-      <AuthShell>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ width: 64, height: 64, borderRadius: "50%", background: "var(--accent-green-dim)", border: "1px solid rgba(0,230,118,0.3)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
-            <Check size={28} color="var(--accent-green)" strokeWidth={2} />
-          </div>
-          <h1 className="font-display" style={{ fontSize: "1.6rem", fontWeight: 800, marginBottom: 12, letterSpacing: "-0.02em" }}>
-            Revisa tu correo
-          </h1>
-          <p style={{ color: "var(--text-secondary)", fontSize: "0.95rem", lineHeight: 1.65, marginBottom: 28 }}>
-            Te enviamos un link de confirmación a{" "}
-            <strong style={{ color: "var(--text-primary)" }}>{form.email}</strong>.
-            <br />
-            Toca el link para activar tu cuenta.
-          </p>
-          <p style={{ fontSize: "0.82rem", color: "var(--text-tertiary)" }}>
-            ¿No llegó? Revisa la carpeta de spam o{" "}
-            <button
-              type="button"
-              onClick={() => setSent(false)}
-              style={{ background: "none", border: "none", color: "var(--accent-yellow)", fontWeight: 600, cursor: "pointer", fontSize: "0.82rem" }}
-            >
-              vuelve a intentarlo.
-            </button>
-          </p>
-        </div>
-      </AuthShell>
-    );
+    router.push("/dashboard");
+    router.refresh();
   }
 
   return (
