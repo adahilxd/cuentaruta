@@ -152,16 +152,26 @@ function TrayectoModal({
 
           {/* Total recorrido calculado */}
           {kmTotal !== null && (
-            <div style={{
-              gridColumn: "1/-1",
-              padding: "10px 14px",
-              background: "rgba(0,230,118,0.08)",
-              border: "1px solid rgba(0,230,118,0.2)",
-              borderRadius: 10,
-              fontSize: 13, fontWeight: 700, color: "#00E676",
-            }}>
-              Total recorrido: {kmTotal} km
-            </div>
+            <label style={{ gridColumn: "1/-1" }} className="form-group">
+              <LBL>Total recorrido</LBL>
+              <input
+                type="text"
+                disabled
+                readOnly
+                value={`${kmTotal} km`}
+                style={{
+                  background: "rgba(0,230,118,0.08)",
+                  border: "1px solid rgba(0,230,118,0.3)",
+                  borderRadius: 10,
+                  padding: "12px 16px",
+                  color: "#00E676",
+                  fontWeight: 700,
+                  fontSize: 20,
+                  fontFamily: "Sora, sans-serif",
+                  cursor: "default",
+                }}
+              />
+            </label>
           )}
 
           {/* Fotos odómetro */}
