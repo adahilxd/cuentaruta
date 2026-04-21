@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { getTrayectos, formatCurrency, fmtFecha } from "@/lib/supabase/queries";
 import {
-  Plus, X, Search, ChevronDown, Check,
+  Plus, X, Search, Camera,
   Navigation, Pencil, Trash2,
 } from "lucide-react";
 
 type Trayecto = {
   id: string; fecha: string; semana: number;
   origen: string; destino: string;
-  km: number | null; valor: number | null; extras: number | null;
+  km_ini: number | null; km_fin: number | null; km: number | null;
+  foto_ini_url: string | null; foto_fin_url: string | null;
+  h_inicio: string | null; h_fin: string | null; h_cobrar: number | null;
+  valor: number | null; extras: number | null;
   estado: string; factura: string | null; notas: string | null;
 };
 
@@ -20,9 +23,10 @@ const SEMANAS = Array.from({ length: 15 }, (_, i) => i + 1);
 
 // ── Modal de formulario ───────────────────────────────────────────────
 function TrayectoModal({
-  trayecto, onClose, onSave,
+  trayecto, conductorId, onClose, onSave,
 }: {
   trayecto: Partial<Trayecto> | null;
+  conductorId: string;
   onClose: () => void;
   onSave: (data: Partial<Trayecto>) => Promise<void>;
 }) {
@@ -31,93 +35,289 @@ function TrayectoModal({
     trayecto ?? { estado: "pendiente", fecha: new Date().toISOString().slice(0, 10) }
   );
   const [saving, setSaving] = useState(false);
+  const [uploadingIni, setUploadingIni] = useState(false);
+  const [uploadingFin, setUploadingFin] = useState(false);
+  const fileIniRef = useRef<HTMLInputElement>(null);
+  const fileFinRef = useRef<HTMLInputElement>(null);
 
   function set(k: keyof Trayecto, v: unknown) {
     setForm((prev) => ({ ...prev, [k]: v }));
   }
 
+  const kmIni = form.km_ini ?? null;
+  const kmFin = form.km_fin ?? null;
+  const kmTotal = kmIni !== null && kmFin !== null && kmFin >= kmIni
+    ? kmFin - kmIni : null;
+
+  async function uploadFoto(file: File, tipo: "inicio" | "fin") {
+    const sb = createClient();
+    const ts = Date.now();
+    const path = `${conductorId}/${form.fecha ?? "sin-fecha"}/${tipo}_${ts}.jpg`;
+    const setUploading = tipo === "inicio" ? setUploadingIni : setUploadingFin;
+    setUploading(true);
+    const { error } = await sb.storage.from("odometros").upload(path, file, { upsert: true });
+    if (!error) {
+      const { data } = sb.storage.from("odometros").getPublicUrl(path);
+      set(tipo === "inicio" ? "foto_ini_url" : "foto_fin_url", data.publicUrl);
+    }
+    setUploading(false);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    await onSave(form);
+    const km = kmTotal ?? form.km ?? null;
+    await onSave({ ...form, km });
     setSaving(false);
   }
+
+  const LBL = ({ children }: { children: React.ReactNode }) => (
+    <span style={{
+      fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)",
+      textTransform: "uppercase", letterSpacing: "0.08em",
+    }}>{children}</span>
+  );
 
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 100,
-      background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)",
+      background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)",
       display: "flex", alignItems: "center", justifyContent: "center",
-      padding: "20px",
+      padding: "16px",
     }} onClick={onClose}>
       <form onSubmit={handleSubmit}
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "var(--bg-surface)", borderRadius: "var(--radius-lg)",
-          border: "1px solid var(--glass-border)", padding: "28px",
-          width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto",
+          background: "#0E1425",
+          border: "1px solid var(--glass-border)",
+          borderRadius: "var(--radius-lg)",
+          padding: "24px 22px",
+          width: "100%", maxWidth: 520, maxHeight: "92vh", overflowY: "auto",
+          display: "flex", flexDirection: "column", gap: 0,
         }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-          <h2 style={{ fontFamily: "Sora, sans-serif", fontSize: 18 }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
+          <h2 style={{ fontFamily: "Sora, sans-serif", fontSize: 17, fontWeight: 700 }}>
             {isNew ? "Nuevo trayecto" : "Editar trayecto"}
           </h2>
-          <button type="button" onClick={onClose}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-secondary)" }}>
+          <button type="button" onClick={onClose} style={{
+            background: "none", border: "none", cursor: "pointer",
+            color: "var(--text-secondary)", padding: 4,
+          }}>
             <X size={20} />
           </button>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <label style={{ gridColumn: "1/-1" }} className="form-group">
-            <span>Fecha</span>
+
+          {/* Fecha | Semana */}
+          <label className="form-group">
+            <LBL>Fecha</LBL>
             <input type="date" value={form.fecha ?? ""} onChange={(e) => set("fecha", e.target.value)} required />
           </label>
           <label className="form-group">
-            <span>Semana</span>
+            <LBL>Semana</LBL>
             <select value={form.semana ?? ""} onChange={(e) => set("semana", Number(e.target.value))} required>
               <option value="">Seleccionar</option>
               {SEMANAS.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
-          <label className="form-group">
-            <span>Estado</span>
-            <select value={form.estado ?? "pendiente"} onChange={(e) => set("estado", e.target.value)}>
-              {ESTADOS.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
+
+          {/* Origen */}
           <label style={{ gridColumn: "1/-1" }} className="form-group">
-            <span>Origen</span>
+            <LBL>Origen</LBL>
             <input type="text" value={form.origen ?? ""} onChange={(e) => set("origen", e.target.value)} required placeholder="Ciudad / municipio" />
           </label>
+
+          {/* Destino */}
           <label style={{ gridColumn: "1/-1" }} className="form-group">
-            <span>Destino</span>
+            <LBL>Destino</LBL>
             <input type="text" value={form.destino ?? ""} onChange={(e) => set("destino", e.target.value)} required placeholder="Ciudad / municipio" />
           </label>
+
+          {/* KM INI | KM FIN */}
           <label className="form-group">
-            <span>Kilómetros</span>
-            <input type="number" min={0} value={form.km ?? ""} onChange={(e) => set("km", e.target.value ? Number(e.target.value) : null)} placeholder="0" />
+            <LBL>KM Inicial</LBL>
+            <input type="number" min={0} value={form.km_ini ?? ""}
+              onChange={(e) => set("km_ini", e.target.value ? Number(e.target.value) : null)}
+              placeholder="0" />
           </label>
           <label className="form-group">
-            <span>Valor (COP)</span>
-            <input type="number" min={0} value={form.valor ?? ""} onChange={(e) => set("valor", e.target.value ? Number(e.target.value) : null)} placeholder="0" />
+            <LBL>KM Final</LBL>
+            <input type="number" min={0} value={form.km_fin ?? ""}
+              onChange={(e) => set("km_fin", e.target.value ? Number(e.target.value) : null)}
+              placeholder="0" />
+          </label>
+
+          {/* Total recorrido calculado */}
+          {kmTotal !== null && (
+            <div style={{
+              gridColumn: "1/-1",
+              padding: "10px 14px",
+              background: "rgba(0,230,118,0.08)",
+              border: "1px solid rgba(0,230,118,0.2)",
+              borderRadius: 10,
+              fontSize: 13, fontWeight: 700, color: "#00E676",
+            }}>
+              Total recorrido: {kmTotal} km
+            </div>
+          )}
+
+          {/* Fotos odómetro */}
+          <div style={{ gridColumn: "1/-1", display: "flex", flexDirection: "column", gap: 8 }}>
+            <LBL>Fotos del odómetro</LBL>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+
+              {/* Foto inicio */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <input ref={fileIniRef} type="file" accept="image/*" capture="environment"
+                  style={{ display: "none" }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFoto(f, "inicio"); }} />
+                <button type="button" onClick={() => fileIniRef.current?.click()} disabled={uploadingIni}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                    padding: "11px 10px", borderRadius: 10,
+                    background: "var(--bg-elevated)", border: "1px solid var(--glass-border)",
+                    color: "var(--text-secondary)", fontSize: 13, fontWeight: 500,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  <Camera size={15} />
+                  {uploadingIni ? "Subiendo…" : "📷 Foto inicio"}
+                </button>
+                {form.foto_ini_url && (
+                  <div style={{ position: "relative", display: "inline-block", width: 56, height: 56 }}>
+                    <img src={form.foto_ini_url} alt="inicio"
+                      style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, border: "1px solid var(--glass-border)" }} />
+                    <button type="button" onClick={() => set("foto_ini_url", null)} style={{
+                      position: "absolute", top: -6, right: -6, width: 18, height: 18,
+                      borderRadius: "50%", background: "#FF4444", border: "none",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer", padding: 0,
+                    }}>
+                      <X size={10} color="white" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Foto fin */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <input ref={fileFinRef} type="file" accept="image/*" capture="environment"
+                  style={{ display: "none" }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFoto(f, "fin"); }} />
+                <button type="button" onClick={() => fileFinRef.current?.click()} disabled={uploadingFin}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                    padding: "11px 10px", borderRadius: 10,
+                    background: "var(--bg-elevated)", border: "1px solid var(--glass-border)",
+                    color: "var(--text-secondary)", fontSize: 13, fontWeight: 500,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  <Camera size={15} />
+                  {uploadingFin ? "Subiendo…" : "📷 Foto fin"}
+                </button>
+                {form.foto_fin_url && (
+                  <div style={{ position: "relative", display: "inline-block", width: 56, height: 56 }}>
+                    <img src={form.foto_fin_url} alt="fin"
+                      style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, border: "1px solid var(--glass-border)" }} />
+                    <button type="button" onClick={() => set("foto_fin_url", null)} style={{
+                      position: "absolute", top: -6, right: -6, width: 18, height: 18,
+                      borderRadius: "50%", background: "#FF4444", border: "none",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      cursor: "pointer", padding: 0,
+                    }}>
+                      <X size={10} color="white" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* H. INICIO | H. FIN */}
+          <label className="form-group">
+            <LBL>H. Inicio</LBL>
+            <input type="time" value={form.h_inicio ?? ""}
+              onChange={(e) => set("h_inicio", e.target.value || null)} />
           </label>
           <label className="form-group">
-            <span>Horas extras</span>
-            <input type="number" min={0} value={form.extras ?? ""} onChange={(e) => set("extras", e.target.value ? Number(e.target.value) : null)} placeholder="0" />
+            <LBL>H. Fin</LBL>
+            <input type="time" value={form.h_fin ?? ""}
+              onChange={(e) => set("h_fin", e.target.value || null)} />
+          </label>
+
+          {/* H. A COBRAR | H. EXTRAS */}
+          <label className="form-group">
+            <LBL>H. a cobrar</LBL>
+            <input type="number" min={0} step={0.5}
+              value={form.h_cobrar ?? ""}
+              onChange={(e) => set("h_cobrar", e.target.value ? Number(e.target.value) : null)}
+              placeholder="0" />
           </label>
           <label className="form-group">
-            <span>N° Factura / Trayecto</span>
-            <input type="text" value={form.factura ?? ""} onChange={(e) => set("factura", e.target.value || null)} placeholder="Opcional" />
+            <LBL>H. Extras</LBL>
+            <input type="number" min={0} step={0.5}
+              value={form.extras ?? ""}
+              onChange={(e) => set("extras", e.target.value ? Number(e.target.value) : null)}
+              placeholder="0" />
           </label>
+
+          {/* Valor | Factura */}
+          <label className="form-group">
+            <LBL>Valor (COP)</LBL>
+            <input type="number" min={0} value={form.valor ?? ""}
+              onChange={(e) => set("valor", e.target.value ? Number(e.target.value) : null)}
+              placeholder="0" />
+          </label>
+          <label className="form-group">
+            <LBL>N° Factura / Trayecto</LBL>
+            <input type="text" value={form.factura ?? ""}
+              onChange={(e) => set("factura", e.target.value || null)}
+              placeholder="Opcional" />
+          </label>
+
+          {/* Estado */}
           <label style={{ gridColumn: "1/-1" }} className="form-group">
-            <span>Notas</span>
-            <textarea rows={3} value={form.notas ?? ""} onChange={(e) => set("notas", e.target.value || null)} placeholder="Observaciones..." />
+            <LBL>Estado</LBL>
+            <select value={form.estado ?? "pendiente"} onChange={(e) => set("estado", e.target.value)}>
+              <option value="pendiente">Pendiente</option>
+              <option value="pagado">Pagado</option>
+              <option value="en_revision">En revisión</option>
+            </select>
+          </label>
+
+          {/* Notas */}
+          <label style={{ gridColumn: "1/-1" }} className="form-group">
+            <LBL>Notas</LBL>
+            <textarea rows={3} value={form.notas ?? ""}
+              onChange={(e) => set("notas", e.target.value || null)}
+              placeholder="Observaciones..." />
           </label>
         </div>
 
-        <button type="submit" className="btn-primary" style={{ marginTop: 20, width: "100%" }} disabled={saving}>
-          {saving ? "Guardando…" : isNew ? "Crear trayecto" : "Guardar cambios"}
-        </button>
+        {/* Botones */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10, marginTop: 24 }}>
+          <button type="button" onClick={onClose} style={{
+            padding: "12px", borderRadius: 10,
+            background: "none", border: "1px solid var(--glass-border)",
+            color: "var(--text-secondary)", fontSize: 14, fontWeight: 600,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Cancelar
+          </button>
+          <button type="submit" disabled={saving} style={{
+            padding: "12px", borderRadius: 10,
+            background: "linear-gradient(135deg, #FFD600 0%, #FF8F00 100%)",
+            border: "none", color: "#080C18",
+            fontSize: 14, fontWeight: 700,
+            cursor: saving ? "not-allowed" : "pointer",
+            fontFamily: "Sora, sans-serif",
+            opacity: saving ? 0.7 : 1,
+          }}>
+            {saving ? "Guardando…" : isNew ? "Crear trayecto" : "Guardar cambios"}
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -148,6 +348,7 @@ export default function TrayectosPage() {
   const [rows, setRows] = useState<Trayecto[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<Partial<Trayecto> | null | undefined>(undefined);
+  const [conductorId, setConductorId] = useState("");
   const [search, setSearch] = useState("");
   const [filterSem, setFilterSem] = useState<number | "">("");
   const [filterEst, setFilterEst] = useState("");
@@ -157,6 +358,7 @@ export default function TrayectosPage() {
     const sb = createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
+    setConductorId(user.id);
     const data = await getTrayectos(user.id);
     setRows(data as Trayecto[]);
     setLoading(false);
@@ -371,6 +573,7 @@ export default function TrayectosPage() {
       {modal !== undefined && (
         <TrayectoModal
           trayecto={modal}
+          conductorId={conductorId}
           onClose={() => setModal(undefined)}
           onSave={handleSave}
         />
