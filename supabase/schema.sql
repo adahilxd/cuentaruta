@@ -1,6 +1,7 @@
 -- ============================================================
 -- CuentaRuta — Schema principal
--- Ejecutar en: Supabase → SQL Editor
+-- Ejecutar en: Supabase → SQL Editor (instalación limpia)
+-- Para DBs existentes: usar migrations/001_fix_columns.sql
 -- ============================================================
 
 -- ─── USUARIOS ────────────────────────────────────────────────
@@ -25,20 +26,14 @@ create table cr_trayectos (
   conductor_id uuid references cr_usuarios(id) on delete cascade,
   fecha        date not null,
   semana       int,
-  ruta         text,
-  cliente      text,
-  km_ini       numeric,
-  km_fin       numeric,
-  hora_ini     time,
-  hora_fin     time,
-  horas        numeric,
-  extras       numeric default 0,
+  origen       text,
+  destino      text,
+  km           numeric,
   valor        numeric,
+  extras       numeric default 0,
   factura      text,
   estado       text default 'pendiente'
-               check (estado in ('pendiente', 'pagado', 'aprobado', 'rechazado')),
-  foto_ini_url text,
-  foto_fin_url text,
+               check (estado in ('pendiente', 'pagado', 'en_revision', 'aprobado', 'rechazado')),
   notas        text,
   created_at   timestamptz default now()
 );
@@ -48,10 +43,11 @@ create table cr_viaticos (
   id           uuid primary key default gen_random_uuid(),
   conductor_id uuid references cr_usuarios(id) on delete cascade,
   fecha        date not null,
-  concepto     text not null,
+  semana       int,
+  categoria    text not null,
+  descripcion  text,
   monto        numeric not null,
   tipo_pago    text,
-  notas        text,
   created_at   timestamptz default now()
 );
 
@@ -61,9 +57,9 @@ create table cr_flujo (
   conductor_id  uuid references cr_usuarios(id) on delete cascade,
   semana        int,
   fecha_salida  date,
-  salidas       numeric default 0,
   fecha_ingreso date,
   ingresos      numeric default 0,
+  salidas       numeric default 0,
   obs           text,
   estado        text default 'pendiente'
                 check (estado in ('pendiente', 'pagado')),
@@ -76,9 +72,8 @@ create table cr_documentos (
   conductor_id uuid references cr_usuarios(id) on delete cascade,
   nombre       text not null,
   vencimiento  date,
-  valor        numeric,
-  estado       text default 'vigente'
-               check (estado in ('vigente', 'vence_pronto', 'vencido')),
+  costo        numeric,
+  notas        text,
   created_at   timestamptz default now()
 );
 
@@ -96,77 +91,50 @@ create table cr_referidos (
 -- ROW LEVEL SECURITY
 -- ============================================================
 
-alter table cr_usuarios  enable row level security;
-alter table cr_trayectos enable row level security;
-alter table cr_viaticos  enable row level security;
-alter table cr_flujo     enable row level security;
+alter table cr_usuarios   enable row level security;
+alter table cr_trayectos  enable row level security;
+alter table cr_viaticos   enable row level security;
+alter table cr_flujo      enable row level security;
 alter table cr_documentos enable row level security;
-alter table cr_referidos enable row level security;
-
--- ─── POLÍTICAS ───────────────────────────────────────────────
+alter table cr_referidos  enable row level security;
 
 -- cr_usuarios
 create policy "usuario ve su perfil"
-  on cr_usuarios for select
-  using (auth.uid() = id);
-
+  on cr_usuarios for select using (auth.uid() = id);
 create policy "usuario actualiza su perfil"
-  on cr_usuarios for update
-  using (auth.uid() = id);
-
+  on cr_usuarios for update using (auth.uid() = id);
 create policy "usuario inserta su perfil"
-  on cr_usuarios for insert
-  with check (auth.uid() = id);
+  on cr_usuarios for insert with check (auth.uid() = id);
 
 -- cr_trayectos
 create policy "conductor ve sus trayectos"
-  on cr_trayectos for all
-  using (auth.uid() = conductor_id);
-
--- Contratista ve trayectos de sus conductores
+  on cr_trayectos for all using (auth.uid() = conductor_id);
 create policy "contratista ve trayectos de sus conductores"
-  on cr_trayectos for select
-  using (
-    exists (
-      select 1 from cr_usuarios c
-      where c.id = cr_trayectos.conductor_id
-        and c.contratista_id = auth.uid()
-    )
+  on cr_trayectos for select using (
+    exists (select 1 from cr_usuarios c
+      where c.id = cr_trayectos.conductor_id and c.contratista_id = auth.uid())
   );
 
 -- cr_viaticos
 create policy "conductor ve sus viaticos"
-  on cr_viaticos for all
-  using (auth.uid() = conductor_id);
-
+  on cr_viaticos for all using (auth.uid() = conductor_id);
 create policy "contratista ve viaticos de sus conductores"
-  on cr_viaticos for select
-  using (
-    exists (
-      select 1 from cr_usuarios c
-      where c.id = cr_viaticos.conductor_id
-        and c.contratista_id = auth.uid()
-    )
+  on cr_viaticos for select using (
+    exists (select 1 from cr_usuarios c
+      where c.id = cr_viaticos.conductor_id and c.contratista_id = auth.uid())
   );
 
 -- cr_flujo
 create policy "conductor ve su flujo"
-  on cr_flujo for all
-  using (auth.uid() = conductor_id);
+  on cr_flujo for all using (auth.uid() = conductor_id);
 
 -- cr_documentos
 create policy "conductor ve sus documentos"
-  on cr_documentos for all
-  using (auth.uid() = conductor_id);
-
+  on cr_documentos for all using (auth.uid() = conductor_id);
 create policy "contratista ve documentos de sus conductores"
-  on cr_documentos for select
-  using (
-    exists (
-      select 1 from cr_usuarios c
-      where c.id = cr_documentos.conductor_id
-        and c.contratista_id = auth.uid()
-    )
+  on cr_documentos for select using (
+    exists (select 1 from cr_usuarios c
+      where c.id = cr_documentos.conductor_id and c.contratista_id = auth.uid())
   );
 
 -- cr_referidos
@@ -179,16 +147,14 @@ create policy "usuario ve sus referidos"
 -- ============================================================
 
 create or replace function handle_new_user()
-returns trigger
-language plpgsql
-security definer set search_path = ''
+returns trigger language plpgsql security definer set search_path = ''
 as $$
 begin
   insert into public.cr_usuarios (id, nombre, rol)
   values (
     new.id,
     new.raw_user_meta_data ->> 'nombre',
-    coalesce(new.raw_user_meta_data ->> 'plan', 'conductor')
+    coalesce(new.raw_user_meta_data ->> 'rol', 'conductor')
   );
   return new;
 end;
@@ -199,7 +165,7 @@ create trigger on_auth_user_created
   for each row execute procedure handle_new_user();
 
 -- ============================================================
--- ÍNDICES para consultas frecuentes
+-- ÍNDICES
 -- ============================================================
 
 create index idx_trayectos_conductor on cr_trayectos(conductor_id, fecha desc);
