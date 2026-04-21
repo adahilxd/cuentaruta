@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { getTrayectos, formatCurrency, fmtFecha } from "@/lib/supabase/queries";
+import { getTrayectos, formatCurrency, fmtFecha, isoWeekOfYear } from "@/lib/supabase/queries";
 import {
   Plus, X, Search, Camera,
   Navigation, Pencil, Trash2,
@@ -10,7 +10,8 @@ import {
 
 type Trayecto = {
   id: string; fecha: string; semana: number;
-  origen: string; destino: string;
+  cliente: string | null;
+  origen: string | null; destino: string | null;
   km_ini: number | null; km_fin: number | null; km: number | null;
   foto_ini_url: string | null; foto_fin_url: string | null;
   h_inicio: string | null; h_fin: string | null; h_cobrar: number | null;
@@ -18,8 +19,21 @@ type Trayecto = {
   estado: string; factura: string | null; notas: string | null;
 };
 
-const ESTADOS = ["pendiente", "pagado", "en_revision"];
 const SEMANAS = Array.from({ length: 15 }, (_, i) => i + 1);
+const ESTADOS = ["pendiente", "pagado", "en_revision"];
+
+// ── Helpers de estilo modal (estilo conductor.milavad) ───────────────
+const INP: React.CSSProperties = {
+  width: "100%", padding: "10px 12px", borderRadius: 8,
+  background: "rgba(255,255,255,0.04)", border: "1px solid #21262D",
+  color: "#E6EDF3", fontSize: 13, fontFamily: "inherit",
+  boxSizing: "border-box" as const,
+};
+const LBL_S: React.CSSProperties = {
+  display: "block", fontSize: 10, fontWeight: 700,
+  color: "#8B949E", textTransform: "uppercase" as const,
+  letterSpacing: "0.08em", marginBottom: 4,
+};
 
 // ── Modal de formulario ───────────────────────────────────────────────
 function TrayectoModal({
@@ -31,301 +45,293 @@ function TrayectoModal({
   onSave: (data: Partial<Trayecto>) => Promise<void>;
 }) {
   const isNew = !trayecto?.id;
-  const [form, setForm] = useState<Partial<Trayecto>>(
-    trayecto ?? { estado: "pendiente", fecha: new Date().toISOString().slice(0, 10) }
-  );
-  const [saving, setSaving] = useState(false);
-  const [uploadingIni, setUploadingIni] = useState(false);
-  const [uploadingFin, setUploadingFin] = useState(false);
+  const hoy = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    fecha:      trayecto?.fecha      ?? hoy,
+    cliente:    trayecto?.cliente    ?? "",
+    km_ini:     trayecto?.km_ini?.toString()  ?? "",
+    km_fin:     trayecto?.km_fin?.toString()  ?? "",
+    foto_ini_url: trayecto?.foto_ini_url ?? null as string | null,
+    foto_fin_url: trayecto?.foto_fin_url ?? null as string | null,
+    h_inicio:   trayecto?.h_inicio   ?? "",
+    h_fin:      trayecto?.h_fin      ?? "",
+    h_cobrar:   trayecto?.h_cobrar?.toString() ?? "",
+    extras:     trayecto?.extras?.toString()   ?? "0",
+    valor:      trayecto?.valor?.toString()    ?? "",
+    factura:    trayecto?.factura    ?? "",
+    origen:     trayecto?.origen     ?? "",
+    estado:     trayecto?.estado     ?? "pendiente",
+    notas:      trayecto?.notas      ?? "",
+  });
+  const [saving, setSaving]         = useState(false);
+  const [uploadingIni, setUpIni]    = useState(false);
+  const [uploadingFin, setUpFin]    = useState(false);
   const fileIniRef = useRef<HTMLInputElement>(null);
   const fileFinRef = useRef<HTMLInputElement>(null);
 
-  function set(k: keyof Trayecto, v: unknown) {
-    setForm((prev) => ({ ...prev, [k]: v }));
+  const kmIni   = form.km_ini ? parseFloat(form.km_ini) : null;
+  const kmFin   = form.km_fin ? parseFloat(form.km_fin) : null;
+  const kmTotal = kmIni !== null && kmFin !== null && kmFin > kmIni ? kmFin - kmIni : null;
+
+  function calcHoras() {
+    if (!form.h_inicio || !form.h_fin) return "";
+    const [h1, m1] = form.h_inicio.split(":").map(Number);
+    const [h2, m2] = form.h_fin.split(":").map(Number);
+    const diff = (h2 * 60 + m2) - (h1 * 60 + m1);
+    return diff > 0 ? (diff / 60).toFixed(2) : "";
   }
 
-  const kmIni = form.km_ini ?? null;
-  const kmFin = form.km_fin ?? null;
-  const kmTotal = kmIni !== null && kmFin !== null && kmFin >= kmIni
-    ? kmFin - kmIni : null;
-
   async function uploadFoto(file: File, tipo: "inicio" | "fin") {
-    const sb = createClient();
-    const ts = Date.now();
-    const path = `${conductorId}/${form.fecha ?? "sin-fecha"}/${tipo}_${ts}.jpg`;
-    const setUploading = tipo === "inicio" ? setUploadingIni : setUploadingFin;
-    setUploading(true);
+    const sb  = createClient();
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `${conductorId}/${form.fecha ?? "sin-fecha"}/${tipo}_${Date.now()}.${ext}`;
+    tipo === "inicio" ? setUpIni(true) : setUpFin(true);
     const { error } = await sb.storage.from("odometros").upload(path, file, { upsert: true });
     if (!error) {
       const { data } = sb.storage.from("odometros").getPublicUrl(path);
-      set(tipo === "inicio" ? "foto_ini_url" : "foto_fin_url", data.publicUrl);
+      setForm(f => ({ ...f, [tipo === "inicio" ? "foto_ini_url" : "foto_fin_url"]: data.publicUrl }));
     }
-    setUploading(false);
+    tipo === "inicio" ? setUpIni(false) : setUpFin(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
-    const km = kmTotal ?? form.km ?? null;
-    await onSave({ ...form, km });
+    const horasCalc  = parseFloat(calcHoras() || "0") || null;
+    const semana     = isoWeekOfYear(new Date(form.fecha + "T12:00:00"));
+    await onSave({
+      ...(trayecto?.id ? { id: trayecto.id } : {}),
+      fecha:        form.fecha,
+      semana,
+      cliente:      form.cliente  || null,
+      km_ini:       kmIni,
+      km_fin:       kmFin,
+      km:           kmTotal,
+      foto_ini_url: form.foto_ini_url,
+      foto_fin_url: form.foto_fin_url,
+      h_inicio:     form.h_inicio || null,
+      h_fin:        form.h_fin    || null,
+      h_cobrar:     form.h_cobrar ? parseFloat(form.h_cobrar) : horasCalc,
+      extras:       parseFloat(form.extras) || 0,
+      valor:        form.valor ? parseInt(form.valor.replace(/\D/g, "")) : null,
+      factura:      form.factura  || null,
+      origen:       form.origen   || null,
+      estado:       form.estado,
+      notas:        form.notas    || null,
+    });
     setSaving(false);
   }
 
-  const LBL = ({ children }: { children: React.ReactNode }) => (
-    <span style={{
-      fontSize: 10, fontWeight: 700, color: "var(--text-tertiary)",
-      textTransform: "uppercase", letterSpacing: "0.08em",
-    }}>{children}</span>
-  );
+  const horasCalc = calcHoras();
+
+  const fotoStyle = (url: string | null): React.CSSProperties => ({
+    width: "100%", padding: "10px 8px", borderRadius: 8, cursor: "pointer",
+    fontFamily: "DM Sans, sans-serif", fontSize: 12, fontWeight: 700,
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+    border: `1px solid ${url ? "rgba(63,185,80,.3)" : "rgba(240,180,41,.25)"}`,
+    background: url ? "rgba(63,185,80,.08)" : "rgba(240,180,41,.06)",
+    color: url ? "#3FB950" : "#F0B429",
+    transition: "all .15s",
+  });
 
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 100,
-      background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)",
+      background: "rgba(0,0,0,.75)", backdropFilter: "blur(6px)",
       display: "flex", alignItems: "center", justifyContent: "center",
-      padding: "16px",
+      padding: 16,
     }} onClick={onClose}>
-      <form onSubmit={handleSubmit}
-        onClick={(e) => e.stopPropagation()}
+      <form onSubmit={handleSubmit} onClick={(e) => e.stopPropagation()}
         style={{
-          background: "#0E1425",
-          border: "1px solid var(--glass-border)",
-          borderRadius: "var(--radius-lg)",
-          padding: "24px 22px",
-          width: "100%", maxWidth: 520, maxHeight: "92vh", overflowY: "auto",
-          display: "flex", flexDirection: "column", gap: 0,
+          background: "#161B22", border: "1px solid #21262D", borderRadius: 16,
+          padding: 24, width: "100%", maxWidth: 520,
+          maxHeight: "92vh", overflowY: "auto",
         }}>
 
-        {/* Header */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
-          <h2 style={{ fontFamily: "Sora, sans-serif", fontSize: 17, fontWeight: 700 }}>
-            {isNew ? "Nuevo trayecto" : "Editar trayecto"}
-          </h2>
-          <button type="button" onClick={onClose} style={{
-            background: "none", border: "none", cursor: "pointer",
-            color: "var(--text-secondary)", padding: 4,
-          }}>
-            <X size={20} />
-          </button>
+        <h2 style={{ fontWeight: 800, fontSize: 18, marginBottom: 20, color: "#E6EDF3" }}>
+          {isNew ? "Nuevo trayecto" : "Editar trayecto"}
+        </h2>
+
+        {/* FECHA + CLIENTE */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div>
+            <label style={LBL_S}>Fecha *</label>
+            <input type="date" value={form.fecha}
+              onChange={e => setForm(f => ({ ...f, fecha: e.target.value }))}
+              style={INP} required />
+          </div>
+          <div>
+            <label style={LBL_S}>Cliente</label>
+            <input type="text" value={form.cliente}
+              onChange={e => setForm(f => ({ ...f, cliente: e.target.value }))}
+              placeholder="CHEC, EPM…" style={INP} />
+          </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-
-          {/* Fecha | Semana */}
-          <label className="form-group">
-            <LBL>Fecha</LBL>
-            <input type="date" value={form.fecha ?? ""} onChange={(e) => set("fecha", e.target.value)} required />
-          </label>
-          <label className="form-group">
-            <LBL>Semana</LBL>
-            <select value={form.semana ?? ""} onChange={(e) => set("semana", Number(e.target.value))} required>
-              <option value="">Seleccionar</option>
-              {SEMANAS.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-
-          {/* Origen */}
-          <label style={{ gridColumn: "1/-1" }} className="form-group">
-            <LBL>Origen</LBL>
-            <input type="text" value={form.origen ?? ""} onChange={(e) => set("origen", e.target.value)} required placeholder="Ciudad / municipio" />
-          </label>
-
-          {/* Destino */}
-          <label style={{ gridColumn: "1/-1" }} className="form-group">
-            <LBL>Destino</LBL>
-            <input type="text" value={form.destino ?? ""} onChange={(e) => set("destino", e.target.value)} required placeholder="Ciudad / municipio" />
-          </label>
-
-          {/* KM INI | KM FIN */}
-          <label className="form-group">
-            <LBL>KM Inicial</LBL>
-            <input type="number" min={0} value={form.km_ini ?? ""}
-              onChange={(e) => set("km_ini", e.target.value ? Number(e.target.value) : null)}
-              placeholder="0" />
-          </label>
-          <label className="form-group">
-            <LBL>KM Final</LBL>
-            <input type="number" min={0} value={form.km_fin ?? ""}
-              onChange={(e) => set("km_fin", e.target.value ? Number(e.target.value) : null)}
-              placeholder="0" />
-          </label>
-
-          {/* Total recorrido calculado */}
-          {kmTotal !== null && (
-            <label style={{ gridColumn: "1/-1" }} className="form-group">
-              <LBL>Total recorrido</LBL>
-              <input
-                type="text"
-                disabled
-                readOnly
-                value={`${kmTotal} km`}
-                style={{
-                  background: "rgba(0,230,118,0.08)",
-                  border: "1px solid rgba(0,230,118,0.3)",
-                  borderRadius: 10,
-                  padding: "12px 16px",
-                  color: "#00E676",
-                  fontWeight: 700,
-                  fontSize: 20,
-                  fontFamily: "Sora, sans-serif",
-                  cursor: "default",
-                }}
-              />
-            </label>
-          )}
-
-          {/* Fotos odómetro */}
-          <div style={{ gridColumn: "1/-1", display: "flex", flexDirection: "column", gap: 8 }}>
-            <LBL>Fotos del odómetro</LBL>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-
-              {/* Foto inicio */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <input ref={fileIniRef} type="file" accept="image/*" capture="environment"
-                  style={{ display: "none" }}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFoto(f, "inicio"); }} />
-                <button type="button" onClick={() => fileIniRef.current?.click()} disabled={uploadingIni}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-                    padding: "11px 10px", borderRadius: 10,
-                    background: "var(--bg-elevated)", border: "1px solid var(--glass-border)",
-                    color: "var(--text-secondary)", fontSize: 13, fontWeight: 500,
-                    cursor: "pointer", fontFamily: "inherit",
-                  }}>
-                  <Camera size={15} />
-                  {uploadingIni ? "Subiendo…" : "📷 Foto inicio"}
-                </button>
-                {form.foto_ini_url && (
-                  <div style={{ position: "relative", display: "inline-block", width: 56, height: 56 }}>
-                    <img src={form.foto_ini_url} alt="inicio"
-                      style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, border: "1px solid var(--glass-border)" }} />
-                    <button type="button" onClick={() => set("foto_ini_url", null)} style={{
-                      position: "absolute", top: -6, right: -6, width: 18, height: 18,
-                      borderRadius: "50%", background: "#FF4444", border: "none",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      cursor: "pointer", padding: 0,
-                    }}>
-                      <X size={10} color="white" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Foto fin */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <input ref={fileFinRef} type="file" accept="image/*" capture="environment"
-                  style={{ display: "none" }}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFoto(f, "fin"); }} />
-                <button type="button" onClick={() => fileFinRef.current?.click()} disabled={uploadingFin}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-                    padding: "11px 10px", borderRadius: 10,
-                    background: "var(--bg-elevated)", border: "1px solid var(--glass-border)",
-                    color: "var(--text-secondary)", fontSize: 13, fontWeight: 500,
-                    cursor: "pointer", fontFamily: "inherit",
-                  }}>
-                  <Camera size={15} />
-                  {uploadingFin ? "Subiendo…" : "📷 Foto fin"}
-                </button>
-                {form.foto_fin_url && (
-                  <div style={{ position: "relative", display: "inline-block", width: 56, height: 56 }}>
-                    <img src={form.foto_fin_url} alt="fin"
-                      style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, border: "1px solid var(--glass-border)" }} />
-                    <button type="button" onClick={() => set("foto_fin_url", null)} style={{
-                      position: "absolute", top: -6, right: -6, width: 18, height: 18,
-                      borderRadius: "50%", background: "#FF4444", border: "none",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      cursor: "pointer", padding: 0,
-                    }}>
-                      <X size={10} color="white" />
-                    </button>
-                  </div>
-                )}
-              </div>
+        {/* ODÓMETRO */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={LBL_S}>Odómetro</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 8 }}>
+            <div>
+              <label style={{ ...LBL_S, color: "#6E7681" }}>KM inicial</label>
+              <input type="number" value={form.km_ini}
+                onChange={e => setForm(f => ({ ...f, km_ini: e.target.value }))}
+                placeholder="0" style={{ ...INP, fontFamily: "monospace" }} />
+            </div>
+            <div>
+              <label style={{ ...LBL_S, color: "#6E7681" }}>KM final</label>
+              <input type="number" value={form.km_fin}
+                onChange={e => setForm(f => ({ ...f, km_fin: e.target.value }))}
+                placeholder="0" style={{ ...INP, fontFamily: "monospace" }} />
             </div>
           </div>
 
-          {/* H. INICIO | H. FIN */}
-          <label className="form-group">
-            <LBL>H. Inicio</LBL>
-            <input type="time" value={form.h_inicio ?? ""}
-              onChange={(e) => set("h_inicio", e.target.value || null)} />
-          </label>
-          <label className="form-group">
-            <LBL>H. Fin</LBL>
-            <input type="time" value={form.h_fin ?? ""}
-              onChange={(e) => set("h_fin", e.target.value || null)} />
-          </label>
+          {/* Foto botones */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+            <div>
+              <input ref={fileIniRef} type="file" accept="image/*" capture="environment"
+                style={{ display: "none" }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f, "inicio"); }} />
+              <button type="button" onClick={() => fileIniRef.current?.click()}
+                disabled={uploadingIni} style={fotoStyle(form.foto_ini_url)}>
+                <span style={{ fontSize: 15 }}>{uploadingIni ? "⏳" : form.foto_ini_url ? "✅" : "📷"}</span>
+                {uploadingIni ? "Subiendo…" : form.foto_ini_url ? "Inicio ✓" : "Foto inicio"}
+              </button>
+              {form.foto_ini_url && (
+                <img src={form.foto_ini_url} alt="inicio"
+                  style={{ width: "100%", height: 52, objectFit: "cover", borderRadius: 6, marginTop: 4 }} />
+              )}
+            </div>
+            <div>
+              <input ref={fileFinRef} type="file" accept="image/*" capture="environment"
+                style={{ display: "none" }}
+                onChange={e => { const f = e.target.files?.[0]; if (f) uploadFoto(f, "fin"); }} />
+              <button type="button" onClick={() => fileFinRef.current?.click()}
+                disabled={uploadingFin} style={fotoStyle(form.foto_fin_url)}>
+                <span style={{ fontSize: 15 }}>{uploadingFin ? "⏳" : form.foto_fin_url ? "✅" : "📷"}</span>
+                {uploadingFin ? "Subiendo…" : form.foto_fin_url ? "Fin ✓" : "Foto fin"}
+              </button>
+              {form.foto_fin_url && (
+                <img src={form.foto_fin_url} alt="fin"
+                  style={{ width: "100%", height: 52, objectFit: "cover", borderRadius: 6, marginTop: 4 }} />
+              )}
+            </div>
+          </div>
 
-          {/* H. A COBRAR | H. EXTRAS */}
-          <label className="form-group">
-            <LBL>H. a cobrar</LBL>
-            <input type="number" min={0} step={0.5}
-              value={form.h_cobrar ?? ""}
-              onChange={(e) => set("h_cobrar", e.target.value ? Number(e.target.value) : null)}
-              placeholder="0" />
-          </label>
-          <label className="form-group">
-            <LBL>H. Extras</LBL>
-            <input type="number" min={0} step={0.5}
-              value={form.extras ?? ""}
-              onChange={(e) => set("extras", e.target.value ? Number(e.target.value) : null)}
-              placeholder="0" />
-          </label>
-
-          {/* Valor | Factura */}
-          <label className="form-group">
-            <LBL>Valor (COP)</LBL>
-            <input type="number" min={0} value={form.valor ?? ""}
-              onChange={(e) => set("valor", e.target.value ? Number(e.target.value) : null)}
-              placeholder="0" />
-          </label>
-          <label className="form-group">
-            <LBL>N° Factura / Trayecto</LBL>
-            <input type="text" value={form.factura ?? ""}
-              onChange={(e) => set("factura", e.target.value || null)}
-              placeholder="Opcional" />
-          </label>
-
-          {/* Estado */}
-          <label style={{ gridColumn: "1/-1" }} className="form-group">
-            <LBL>Estado</LBL>
-            <select value={form.estado ?? "pendiente"} onChange={(e) => set("estado", e.target.value)}>
-              <option value="pendiente">Pendiente</option>
-              <option value="pagado">Pagado</option>
-              <option value="en_revision">En revisión</option>
-            </select>
-          </label>
-
-          {/* Notas */}
-          <label style={{ gridColumn: "1/-1" }} className="form-group">
-            <LBL>Notas</LBL>
-            <textarea rows={3} value={form.notas ?? ""}
-              onChange={(e) => set("notas", e.target.value || null)}
-              placeholder="Observaciones..." />
-          </label>
+          {/* Total recorrido */}
+          {kmTotal !== null && (
+            <div style={{
+              padding: "10px 14px", borderRadius: 8, marginBottom: 4,
+              background: "rgba(0,230,118,0.08)", border: "1px solid rgba(0,230,118,0.3)",
+              color: "#00E676", fontWeight: 700, fontSize: 18,
+              fontFamily: "Sora, sans-serif",
+            }}>
+              📍 {kmTotal} km recorridos
+            </div>
+          )}
         </div>
 
-        {/* Botones */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 10, marginTop: 24 }}>
-          <button type="button" onClick={onClose} style={{
-            padding: "12px", borderRadius: 10,
-            background: "none", border: "1px solid var(--glass-border)",
-            color: "var(--text-secondary)", fontSize: 14, fontWeight: 600,
-            cursor: "pointer", fontFamily: "inherit",
+        {/* H. INICIO + H. FIN + H. EXTRAS */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div>
+            <label style={LBL_S}>H. Inicio</label>
+            <input type="time" value={form.h_inicio}
+              onChange={e => setForm(f => ({ ...f, h_inicio: e.target.value }))}
+              style={{ ...INP, fontFamily: "monospace" }} />
+          </div>
+          <div>
+            <label style={LBL_S}>H. Fin</label>
+            <input type="time" value={form.h_fin}
+              onChange={e => setForm(f => ({ ...f, h_fin: e.target.value }))}
+              style={{ ...INP, fontFamily: "monospace" }} />
+          </div>
+          <div>
+            <label style={LBL_S}>H. Extras</label>
+            <input type="number" value={form.extras} min={0} step={0.5}
+              onChange={e => setForm(f => ({ ...f, extras: e.target.value }))}
+              placeholder="0" style={{ ...INP, fontFamily: "monospace" }} />
+          </div>
+        </div>
+
+        {/* Horas calculadas (indicador) */}
+        {horasCalc && (
+          <div style={{
+            marginBottom: 12, padding: "7px 12px",
+            background: "rgba(240,180,41,.08)", border: "1px solid rgba(240,180,41,.2)",
+            borderRadius: 8, fontSize: 12, color: "#F0B429",
           }}>
-            Cancelar
-          </button>
-          <button type="submit" disabled={saving} style={{
-            padding: "12px", borderRadius: 10,
-            background: "linear-gradient(135deg, #FFD600 0%, #FF8F00 100%)",
-            border: "none", color: "#080C18",
-            fontSize: 14, fontWeight: 700,
-            cursor: saving ? "not-allowed" : "pointer",
+            ⏱️ Horas calculadas: <span style={{ fontFamily: "monospace" }}>{horasCalc}h</span>
+          </div>
+        )}
+
+        {/* H. A COBRAR */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={LBL_S}>H. a cobrar</label>
+          <input type="number" value={form.h_cobrar} min={0} step={0.5}
+            onChange={e => setForm(f => ({ ...f, h_cobrar: e.target.value }))}
+            placeholder={horasCalc || "0"} style={{ ...INP, fontFamily: "monospace" }} />
+        </div>
+
+        {/* VALOR + FACTURA */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div>
+            <label style={LBL_S}>Valor ($)</label>
+            <input type="text" value={form.valor}
+              onChange={e => setForm(f => ({ ...f, valor: e.target.value }))}
+              placeholder="250000" style={{ ...INP, fontFamily: "monospace" }} />
+          </div>
+          <div>
+            <label style={LBL_S}>N° Factura</label>
+            <input type="text" value={form.factura}
+              onChange={e => setForm(f => ({ ...f, factura: e.target.value }))}
+              placeholder="FAC-001" style={INP} />
+          </div>
+        </div>
+
+        {/* RUTA */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={LBL_S}>Ruta</label>
+          <input type="text" value={form.origen}
+            onChange={e => setForm(f => ({ ...f, origen: e.target.value }))}
+            placeholder="Manizales → La Dorada" style={INP} />
+        </div>
+
+        {/* ESTADO */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={LBL_S}>Estado</label>
+          <select value={form.estado}
+            onChange={e => setForm(f => ({ ...f, estado: e.target.value }))}
+            style={{ ...INP, appearance: "none" as const }}>
+            <option value="pendiente">Pendiente</option>
+            <option value="pagado">Pagado</option>
+            <option value="en_revision">En revisión</option>
+          </select>
+        </div>
+
+        {/* NOTAS */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={LBL_S}>Notas</label>
+          <input type="text" value={form.notas}
+            onChange={e => setForm(f => ({ ...f, notas: e.target.value }))}
+            placeholder="Observaciones…" style={INP} />
+        </div>
+
+        {/* BOTONES */}
+        <div style={{ display: "flex", gap: 10 }}>
+          <button type="button" onClick={onClose} style={{
+            flex: 1, background: "transparent", border: "1px solid #21262D",
+            color: "#8B949E", padding: 10, borderRadius: 8,
+            cursor: "pointer", fontFamily: "DM Sans, sans-serif", fontSize: 13,
+          }}>Cancelar</button>
+          <button type="submit" disabled={saving || uploadingIni || uploadingFin} style={{
+            flex: 2, padding: 10, borderRadius: 8, border: "none",
+            background: "linear-gradient(135deg, #F0B429 0%, #E88C00 100%)",
+            color: "#080C18", fontWeight: 800, fontSize: 14,
             fontFamily: "Sora, sans-serif",
+            cursor: saving ? "not-allowed" : "pointer",
             opacity: saving ? 0.7 : 1,
           }}>
-            {saving ? "Guardando…" : isNew ? "Crear trayecto" : "Guardar cambios"}
+            {saving ? "Guardando…" : (uploadingIni || uploadingFin) ? "Subiendo fotos…" : isNew ? "Guardar trayecto" : "Guardar cambios"}
           </button>
         </div>
       </form>
