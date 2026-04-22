@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { getTrayectos, formatCurrency, fmtFecha, isoWeekOfYear } from "@/lib/supabase/queries";
 import {
@@ -361,6 +362,7 @@ function EstadoBadge({ estado, onClick }: { estado: string; onClick?: () => void
 
 // ── Page ─────────────────────────────────────────────────────────────
 export default function TrayectosPage() {
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<Trayecto[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<Partial<Trayecto> | null | undefined>(undefined);
@@ -369,6 +371,14 @@ export default function TrayectosPage() {
   const [filterSem, setFilterSem] = useState<number | "">("");
   const [filterEst, setFilterEst] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Sync filters from URL params (sidebar/chips navigation)
+  useEffect(() => {
+    const estado = searchParams.get("estado") ?? "";
+    const semana = searchParams.get("semana");
+    setFilterEst(estado);
+    setFilterSem(semana ? Number(semana) : "");
+  }, [searchParams]);
 
   async function load() {
     const sb = createClient();

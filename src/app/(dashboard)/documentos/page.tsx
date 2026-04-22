@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import {
   getDocumentos, fmtFecha, estadoDocumento, diasParaVencer,
@@ -185,6 +186,8 @@ function DocCard({
 
 // ── Page ─────────────────────────────────────────────────────────────
 export default function DocumentosPage() {
+  const searchParams = useSearchParams();
+  const filterEstado = searchParams.get("estado") ?? "";
   const [docs, setDocs] = useState<Documento[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<Partial<Documento> | null | undefined>(undefined);
@@ -223,8 +226,12 @@ export default function DocumentosPage() {
     setDeleting(null);
   }, []);
 
-  const alertas = docs.filter((d) => estadoDocumento(d.vencimiento) !== "vigente");
-  const vigentes = docs.filter((d) => estadoDocumento(d.vencimiento) === "vigente");
+  const displayDocs = useMemo(() =>
+    filterEstado ? docs.filter(d => estadoDocumento(d.vencimiento) === filterEstado) : docs,
+    [docs, filterEstado]
+  );
+  const alertas = displayDocs.filter((d) => estadoDocumento(d.vencimiento) !== "vigente");
+  const vigentes = displayDocs.filter((d) => estadoDocumento(d.vencimiento) === "vigente");
 
   return (
     <div style={{ padding: "24px", maxWidth: 900, margin: "0 auto" }}>
@@ -232,8 +239,9 @@ export default function DocumentosPage() {
         <div>
           <h1 style={{ fontFamily: "Sora, sans-serif", fontSize: 22, fontWeight: 700 }}>Documentos</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 4 }}>
-            {docs.length} documento{docs.length !== 1 ? "s" : ""}
-            {alertas.length > 0 ? ` · ${alertas.length} con alertas` : " · todos vigentes"}
+            {displayDocs.length} documento{displayDocs.length !== 1 ? "s" : ""}
+            {filterEstado ? ` · filtro: ${filterEstado.replace("_", " ")}` :
+              alertas.length > 0 ? ` · ${alertas.length} con alertas` : " · todos vigentes"}
           </p>
         </div>
         <button className="btn-primary" style={{ padding: "10px 18px", minHeight: 40 }}
@@ -244,7 +252,7 @@ export default function DocumentosPage() {
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-secondary)" }}>Cargando…</div>
-      ) : docs.length === 0 ? (
+      ) : displayDocs.length === 0 ? (
         <div className="glass-card" style={{ padding: "48px 24px", textAlign: "center" }}>
           <FileText size={32} style={{ color: "var(--text-tertiary)", margin: "0 auto 12px" }} />
           <p style={{ color: "var(--text-secondary)" }}>Sin documentos registrados</p>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { getFlujo, formatCurrency, fmtFecha } from "@/lib/supabase/queries";
 import {
@@ -197,6 +198,8 @@ function FlujoModal({
 
 // ── Page ─────────────────────────────────────────────────────────────
 export default function FlujoPage() {
+  const searchParams = useSearchParams();
+  const filterEstado = searchParams.get("estado") ?? "";
   const [flujo, setFlujo] = useState<FlujoRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<Partial<FlujoRow> | null | undefined>(undefined);
@@ -213,10 +216,20 @@ export default function FlujoPage() {
 
   useEffect(() => { load(); }, []);
 
+  const filtered = useMemo(() =>
+    filterEstado ? flujo.filter(r => r.estado === filterEstado) : flujo,
+    [flujo, filterEstado]
+  );
+
   const totales = useMemo(() => ({
     ingresos: flujo.reduce((s, r) => s + (r.ingresos ?? 0), 0),
     salidas:  flujo.reduce((s, r) => s + (r.salidas ?? 0), 0),
   }), [flujo]);
+
+  const filteredTotales = useMemo(() => ({
+    ingresos: filtered.reduce((s, r) => s + (r.ingresos ?? 0), 0),
+    salidas:  filtered.reduce((s, r) => s + (r.salidas ?? 0), 0),
+  }), [filtered]);
 
   const utilidad = totales.ingresos - totales.salidas;
 
@@ -249,7 +262,7 @@ export default function FlujoPage() {
         <div>
           <h1 style={{ fontFamily: "Sora, sans-serif", fontSize: 22, fontWeight: 700 }}>Flujo Semanal</h1>
           <p style={{ color: "var(--text-secondary)", fontSize: 13, marginTop: 4 }}>
-            Ingresos y gastos por semana · {flujo.length} semana{flujo.length !== 1 ? "s" : ""}
+            Ingresos y gastos por semana · {filtered.length} semana{filtered.length !== 1 ? "s" : ""}{filterEstado ? ` · ${filterEstado}` : ""}
           </p>
         </div>
         <button
@@ -279,7 +292,7 @@ export default function FlujoPage() {
 
       {loading ? (
         <div style={{ textAlign: "center", padding: "60px 0", color: "var(--text-secondary)" }}>Cargando…</div>
-      ) : flujo.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="glass-card" style={{ padding: "48px 24px", textAlign: "center" }}>
           <CalendarDays size={32} style={{ color: "var(--text-tertiary)", margin: "0 auto 12px" }} strokeWidth={1.5} />
           <p style={{ color: "var(--text-secondary)", marginBottom: 16 }}>Sin semanas registradas</p>
@@ -305,7 +318,7 @@ export default function FlujoPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {flujo.map((r) => {
+                  {filtered.map((r) => {
                     const util = (r.ingresos ?? 0) - (r.salidas ?? 0);
                     return (
                       <tr key={r.id} style={{ borderBottom: "1px solid var(--glass-border)" }} className="flj-row">
@@ -357,16 +370,16 @@ export default function FlujoPage() {
                   <tr style={{ borderTop: "2px solid var(--glass-border-hover)", background: "var(--glass-bg)" }}>
                     <td colSpan={3} style={{ padding: "12px 14px", fontSize: 13, fontWeight: 700 }}>Total</td>
                     <td style={{ padding: "12px 14px", fontSize: 13, fontWeight: 700, color: "var(--accent-green)", whiteSpace: "nowrap" }}>
-                      {formatCurrency(totales.ingresos)}
+                      {formatCurrency(filteredTotales.ingresos)}
                     </td>
                     <td style={{ padding: "12px 14px", fontSize: 13, fontWeight: 700, color: "var(--accent-red)", whiteSpace: "nowrap" }}>
-                      {formatCurrency(totales.salidas)}
+                      {formatCurrency(filteredTotales.salidas)}
                     </td>
                     <td style={{
                       padding: "12px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap",
-                      color: utilidad >= 0 ? "var(--accent-green)" : "var(--accent-red)",
+                      color: (filteredTotales.ingresos - filteredTotales.salidas) >= 0 ? "var(--accent-green)" : "var(--accent-red)",
                     }}>
-                      {formatCurrency(utilidad)}
+                      {formatCurrency(filteredTotales.ingresos - filteredTotales.salidas)}
                     </td>
                     <td colSpan={2} />
                   </tr>
@@ -377,7 +390,7 @@ export default function FlujoPage() {
 
           {/* Mobile cards */}
           <div className="flj-mobile" style={{ display: "none", flexDirection: "column", gap: 10 }}>
-            {flujo.map((r) => {
+            {filtered.map((r) => {
               const util = (r.ingresos ?? 0) - (r.salidas ?? 0);
               return (
                 <div key={r.id} className="glass-card" style={{ padding: "16px" }}>

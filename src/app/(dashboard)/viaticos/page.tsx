@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { getViaticos, formatCurrency, fmtFecha } from "@/lib/supabase/queries";
 import { Plus, X, Search, Wallet, Pencil, Trash2 } from "lucide-react";
@@ -151,6 +152,7 @@ function CatChart({ data }: { data: { cat: string; total: number }[] }) {
 
 // ── Page ─────────────────────────────────────────────────────────────
 export default function ViaticosPage() {
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<Viatico[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<Partial<Viatico> | null | undefined>(undefined);
@@ -158,6 +160,11 @@ export default function ViaticosPage() {
   const [filterSem, setFilterSem] = useState<number | "">("");
   const [filterCat, setFilterCat] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // Sync concepto filter from URL params (sidebar/chips navigation)
+  useEffect(() => {
+    setFilterCat(searchParams.get("concepto") ?? "");
+  }, [searchParams]);
 
   async function load() {
     const sb = createClient();
