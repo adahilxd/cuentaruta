@@ -1,12 +1,21 @@
-export async function sendWhatsApp(telefono: string, mensaje: string) {
-  if (!telefono) return;
-  const apikey = process.env.CALLMEBOT_APIKEY;
-  if (!apikey) return;
-  const phone = telefono.replace(/[^0-9+]/g, "");
-  const url = `https://api.callmebot.com/whatsapp.php?phone=${phone}&text=${encodeURIComponent(mensaje)}&apikey=${apikey}`;
+import twilio from 'twilio'
+
+const client = twilio(
+  process.env.TWILIO_ACCOUNT_SID,
+  process.env.TWILIO_AUTH_TOKEN
+)
+
+export async function sendWhatsApp(
+  telefono: string,
+  mensaje: string
+): Promise<void> {
   try {
-    await fetch(url, { method: "GET" });
-  } catch {
-    // WhatsApp notification is best-effort
+    await client.messages.create({
+      from: 'whatsapp:' + process.env.TWILIO_WHATSAPP_NUMBER,
+      to: 'whatsapp:+' + telefono.replace(/\D/g, ''),
+      body: mensaje
+    })
+  } catch (error) {
+    console.error('Error enviando WhatsApp:', error)
   }
 }
