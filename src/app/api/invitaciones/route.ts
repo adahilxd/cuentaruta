@@ -26,11 +26,14 @@ export async function POST(req: NextRequest) {
   const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://cuentaruta.com"}/unirse/${inv.token}`;
   const nombre = perfil?.nombre ?? "Tu contratista";
 
+  let emailStatus = "skipped_no_key";
   if (process.env.RESEND_API_KEY) {
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
+      const from = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
+      console.log("[invitaciones] sending email from:", from, "to:", email);
+      const result = await resend.emails.send({
+        from,
         to: email,
         subject: "Te invitaron a CuentaRuta",
         html: `
@@ -45,12 +48,15 @@ export async function POST(req: NextRequest) {
           </div>
         `,
       });
+      console.log("[invitaciones] resend result:", JSON.stringify(result));
+      emailStatus = result.error ? `error: ${result.error.message}` : "sent";
     } catch (emailErr) {
-      console.error("Error enviando email:", emailErr);
+      emailStatus = `exception: ${emailErr}`;
+      console.error("[invitaciones] email exception:", emailErr);
     }
   }
 
-  return NextResponse.json({ ok: true, token: inv.token, link });
+  return NextResponse.json({ ok: true, token: inv.token, link, emailStatus });
 }
 
 export async function GET(req: NextRequest) {
