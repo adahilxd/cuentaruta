@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
@@ -119,7 +119,7 @@ function isHrefActive(href: string, pathname: string, sp: URLSearchParams): bool
 }
 
 // ── Layout ─────────────────────────────────────────────────────────────
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname    = usePathname();
   const searchParams = useSearchParams();
 
@@ -633,5 +633,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </div>
     </>
+  );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense>
+      <LayoutShell>{children}</LayoutShell>
+    </Suspense>
   );
 }
