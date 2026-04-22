@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
       await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL ?? "hola@cuentaruta.com",
+        from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
         to: email,
         subject: "Te invitaron a CuentaRuta",
         html: `
