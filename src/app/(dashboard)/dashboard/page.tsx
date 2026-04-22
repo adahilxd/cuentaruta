@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import {
   formatCurrency,
@@ -90,6 +91,7 @@ function BarChart({ data }: { data: { semana: number; ingresos: number; gastos: 
 
 // ── Page ─────────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const router = useRouter();
   const [trayectos, setTrayectos] = useState<Trayecto[]>([]);
   const [viaticos, setViaticos] = useState<Viatico[]>([]);
   const [flujo, setFlujo] = useState<Flujo[]>([]);
@@ -101,6 +103,8 @@ export default function DashboardPage() {
       const sb = createClient();
       const { data: { user } } = await sb.auth.getUser();
       if (!user) return;
+      const { data: perfil } = await sb.from("cr_usuarios").select("rol").eq("id", user.id).single();
+      if (perfil?.rol === "contratista") { router.replace("/contratista"); return; }
       const [t, v, f, d] = await Promise.all([
         getTrayectos(user.id),
         getViaticos(user.id),

@@ -17,11 +17,11 @@ type Trayecto = {
   foto_ini_url: string | null; foto_fin_url: string | null;
   h_inicio: string | null; h_fin: string | null; h_cobrar: number | null;
   valor: number | null; extras: number | null;
-  estado: string; factura: string | null; notas: string | null;
+  estado: string; factura: string | null; notas: string | null; motivo_rechazo: string | null;
 };
 
 const SEMANAS = Array.from({ length: 15 }, (_, i) => i + 1);
-const ESTADOS = ["pendiente", "pagado", "en_revision"];
+const ESTADOS = ["pendiente", "pagado", "en_revision", "aprobado", "rechazado"];
 
 // ── Helpers de estilo modal (estilo conductor.milavad) ───────────────
 const INP: React.CSSProperties = {
@@ -346,6 +346,8 @@ function EstadoBadge({ estado, onClick }: { estado: string; onClick?: () => void
     pagado:      { bg: "var(--accent-green-dim)",  fg: "var(--accent-green)" },
     pendiente:   { bg: "var(--accent-yellow-dim)", fg: "var(--accent-yellow)" },
     en_revision: { bg: "var(--accent-blue-dim)",   fg: "var(--accent-blue)" },
+    aprobado:    { bg: "rgba(0,230,118,0.12)",      fg: "#00E676" },
+    rechazado:   { bg: "rgba(255,68,68,0.12)",      fg: "#FF4444" },
   };
   const c = colors[estado] ?? colors.pendiente;
   return (
@@ -563,10 +565,13 @@ export default function TrayectosPage() {
                     <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 4 }}>
                       {fmtFecha(t.fecha)} · Sem. {t.semana}{t.factura ? ` · #${t.factura}` : ""}
                     </div>
-                    <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
+                    <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                       <EstadoBadge estado={t.estado} onClick={() => toggleEstado(t)} />
                       {t.extras ? <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{t.extras}h extras</span> : null}
                     </div>
+                    {t.estado === "rechazado" && t.motivo_rechazo && (
+                      <p style={{ fontSize: 11, color: "#FF4444", margin: "4px 0 0", fontStyle: "italic" }}>Motivo: {t.motivo_rechazo}</p>
+                    )}
                   </div>
                   <div style={{ textAlign: "right", marginLeft: 12 }}>
                     <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-green)" }}>

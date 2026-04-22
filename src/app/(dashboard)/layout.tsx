@@ -6,9 +6,10 @@ import { usePathname, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard, Navigation, Wallet, CalendarDays,
   FileWarning, Calculator, Settings, Route,
-  MoreHorizontal, X, LogOut, ChevronDown, Menu,
+  MoreHorizontal, X, LogOut, ChevronDown, Menu, Users,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
+import NotificationBell from "@/components/NotificationBell";
 
 // ── Nav config ─────────────────────────────────────────────────────────
 type SubItem = { label: string; href: string; sep?: true };
@@ -68,12 +69,14 @@ function buildNav(semanas: number[]): NavItem[] {
     },
     { key: "liquidacion",  href: "/liquidacion",  icon: Calculator, label: "Liquidación" },
     { key: "configuracion",href: "/configuracion", icon: Settings,   label: "Configuración" },
+    { key: "contratista",  href: "/contratista",  icon: Users,      label: "Mi Flota" },
   ];
 }
 
 const SUBMENU_KEYS = new Set(["trayectos", "viaticos", "flujo", "documentos"]);
 const BOTTOM_TAB_KEYS = ["dashboard", "trayectos", "viaticos", "documentos"];
-const MORE_KEYS = ["flujo", "liquidacion", "configuracion"];
+const MORE_KEYS_CONDUCTOR   = ["flujo", "liquidacion", "configuracion"];
+const MORE_KEYS_CONTRATISTA = ["contratista", "flujo", "configuracion"];
 
 // ── Chip config ────────────────────────────────────────────────────────
 type Chip = { label: string; href: string };
@@ -128,6 +131,7 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [moreOpen,   setMoreOpen]   = useState(false);
   const [nombre,     setNombre]     = useState("");
+  const [rol,        setRol]        = useState("conductor");
   const [loggingOut, setLoggingOut] = useState(false);
 
   const prevModuleRef = useRef<string | null>(null);
@@ -154,10 +158,11 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
       const { data: { user } } = await sb.auth.getUser();
       if (!user) return;
       const [{ data: u }, { data: sem }] = await Promise.all([
-        sb.from("cr_usuarios").select("nombre").eq("id", user.id).single(),
+        sb.from("cr_usuarios").select("nombre, rol").eq("id", user.id).single(),
         sb.from("cr_trayectos").select("semana").eq("conductor_id", user.id),
       ]);
       setNombre(u?.nombre ?? "");
+      setRol((u as { rol?: string } | null)?.rol ?? "conductor");
       if (sem) {
         const unique = [...new Set((sem as { semana: number }[]).map(r => r.semana))]
           .filter(Boolean).sort((a, b) => a - b);
@@ -166,8 +171,12 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const nav   = buildNav(semanas);
-  const chips = getChips(pathname, semanas);
+  const isContratista = rol === "contratista";
+  const MORE_KEYS = isContratista ? MORE_KEYS_CONTRATISTA : MORE_KEYS_CONDUCTOR;
+
+  const allNav = buildNav(semanas);
+  const nav    = isContratista ? allNav : allNav.filter(n => n.key !== "contratista");
+  const chips  = getChips(pathname, semanas);
 
   const initials = nombre.split(" ").slice(0, 2).map(n => n[0] ?? "").join("").toUpperCase() || "?";
 
@@ -502,13 +511,16 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
           {renderNav()}
 
           <div className="crs-footer">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <NotificationBell />
+            </div>
             <div className="crs-user">
               <div className="crs-avatar">{initials}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: "0.82rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {nombre || "…"}
                 </p>
-                <span className="crs-badge">Conductor</span>
+                <span className="crs-badge" style={isContratista ? { background: "rgba(255,214,0,0.12)", borderColor: "rgba(255,214,0,0.25)", color: "#FFD600" } : {}}>{isContratista ? "Contratista" : "Conductor"}</span>
               </div>
               <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#00E676", boxShadow: "0 0 6px #00E676", flexShrink: 0 }} />
             </div>
@@ -529,9 +541,12 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
               </div>
             </Link>
             <span className="crs-mobile-title">{pageTitle}</span>
-            <button className="crs-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Abrir menú">
-              <Menu size={22} strokeWidth={1.5} />
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <NotificationBell />
+              <button className="crs-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Abrir menú">
+                <Menu size={22} strokeWidth={1.5} />
+              </button>
+            </div>
           </header>
 
           {/* Mobile chips */}
@@ -596,7 +611,7 @@ function LayoutShell({ children }: { children: React.ReactNode }) {
                 <p style={{ fontSize: "0.82rem", fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {nombre || "…"}
                 </p>
-                <span className="crs-badge">Conductor</span>
+                <span className="crs-badge" style={isContratista ? { background: "rgba(255,214,0,0.12)", borderColor: "rgba(255,214,0,0.25)", color: "#FFD600" } : {}}>{isContratista ? "Contratista" : "Conductor"}</span>
               </div>
             </div>
             <button onClick={handleLogout} disabled={loggingOut} className="crs-logout">

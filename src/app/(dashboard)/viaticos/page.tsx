@@ -10,6 +10,7 @@ type Viatico = {
   id: string; fecha: string; semana: number;
   categoria: string; descripcion: string | null;
   monto: number | null; tipo_pago: string;
+  estado: string; motivo_rechazo: string | null;
 };
 
 const CATEGORIAS = [
@@ -306,8 +307,22 @@ export default function ViaticosPage() {
                   {v.descripcion ? ` · ${v.descripcion}` : ""}
                 </div>
               </div>
-              <div style={{ fontWeight: 700, fontSize: 15, color: CAT_COLOR[v.categoria] ?? "var(--text-primary)", whiteSpace: "nowrap" }}>
-                {formatCurrency(v.monto)}
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontWeight: 700, fontSize: 15, color: CAT_COLOR[v.categoria] ?? "var(--text-primary)", whiteSpace: "nowrap" }}>
+                  {formatCurrency(v.monto)}
+                </div>
+                {v.estado && v.estado !== "pendiente" && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 6,
+                    background: v.estado === "aprobado" ? "rgba(0,230,118,0.12)" : "rgba(255,68,68,0.12)",
+                    color: v.estado === "aprobado" ? "#00E676" : "#FF4444",
+                  }}>
+                    {v.estado}
+                  </span>
+                )}
+                {v.estado === "rechazado" && v.motivo_rechazo && (
+                  <p style={{ fontSize: 10, color: "#FF4444", margin: "2px 0 0", fontStyle: "italic", maxWidth: 120 }}>{v.motivo_rechazo}</p>
+                )}
               </div>
               <div style={{ display: "flex", gap: 4 }}>
                 <button onClick={() => setModal(v)}
