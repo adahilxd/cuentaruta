@@ -1,4 +1,5 @@
 import { createClient } from "@/utils/supabase/server";
+import { getUserByEmail } from "@/lib/supabase-admin";
 import UnirseClient from "./UnirseClient";
 
 function ErrorPage({ emoji = "😕", title = "Invitación no válida", message }: { emoji?: string; title?: string; message: string }) {
@@ -29,18 +30,9 @@ export default async function UnirsePage({ params }: { params: Promise<{ token: 
 
   const nombreContratista = (inv.cr_usuarios as unknown as { nombre: string } | null)?.nombre ?? "Tu contratista";
 
-  // 2. Detectar si el email ya tiene cuenta (admin REST API, server-side)
-  const authRes = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(inv.email)}`,
-    {
-      headers: {
-        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
-      },
-    }
-  );
-  const authData = await authRes.json();
-  const existeUsuario = Array.isArray(authData.users) && authData.users.length > 0;
+  // 2. Detectar si el email ya tiene cuenta en auth.users (server-side, sin tocar cr_usuarios)
+  const authUser = await getUserByEmail(inv.email);
+  const existeUsuario = !!authUser;
 
   // 3. Pasar resultado como props al componente cliente
   return (

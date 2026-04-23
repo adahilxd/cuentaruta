@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { getUserByEmail } from "@/lib/supabase-admin";
 
 export async function GET(
   _req: NextRequest,
@@ -18,17 +19,8 @@ export async function GET(
 
   const nombre = (data.cr_usuarios as unknown as { nombre: string } | null)?.nombre ?? "Tu contratista";
 
-  const authRes = await fetch(
-    `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(data.email)}`,
-    {
-      headers: {
-        apikey: process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
-      },
-    }
-  );
-  const authData = await authRes.json();
-  const tieneaccount = Array.isArray(authData.users) && authData.users.length > 0;
+  const authUser = await getUserByEmail(data.email);
+  const tieneaccount = !!authUser;
 
   return NextResponse.json({
     email: data.email,
