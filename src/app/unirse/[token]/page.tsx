@@ -158,17 +158,7 @@ export default function UnirsePage() {
 
         {yaTieneCuenta ? (
           /* ── Flujo: ya tiene cuenta ── */
-          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "28px 24px", display: "flex", flexDirection: "column", gap: 20, textAlign: "center" }}>
-            <div style={{ fontSize: 40 }}>👋</div>
-            <div>
-              <p style={{ color: "#fff", fontFamily: "DM Sans, sans-serif", fontSize: 16, margin: "0 0 8px", fontWeight: 600 }}>
-                ¡Bienvenido de nuevo!
-              </p>
-              <p style={{ color: "rgba(255,255,255,0.55)", fontFamily: "DM Sans, sans-serif", fontSize: 14, margin: 0 }}>
-                Ya tienes una cuenta con <strong style={{ color: "#FFD600" }}>{inv!.email}</strong>.<br />
-                Al aceptar quedarás vinculado a la flota de <strong style={{ color: "#FFD600" }}>{inv!.contratista_nombre}</strong>.
-              </p>
-            </div>
+          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "28px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
             {submitErr && (
               <p style={{ color: "#FF4444", fontFamily: "DM Sans, sans-serif", fontSize: 13, margin: 0 }}>{submitErr}</p>
             )}

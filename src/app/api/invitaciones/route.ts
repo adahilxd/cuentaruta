@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
         subject: "Te invitaron a CuentaRuta",
         html: `
           <div style="font-family:sans-serif;max-width:500px;margin:auto;padding:32px">
-            <img src="https://cuentaruta.com/logo.png" alt="CuentaRuta" style="height:40px;margin-bottom:24px" />
+            <div style="font-family:sans-serif;font-size:24px;font-weight:bold;color:#00E676;margin-bottom:24px;">CuentaRuta</div>
             <h2 style="margin:0 0 16px">¡Fuiste invitado!</h2>
             <p><strong>${nombre}</strong> te invita a unirte a CuentaRuta como conductor de su flota.</p>
             <a href="${link}" style="display:inline-block;margin:24px 0;padding:14px 28px;background:#FFD600;color:#080C18;font-weight:700;text-decoration:none;border-radius:10px">

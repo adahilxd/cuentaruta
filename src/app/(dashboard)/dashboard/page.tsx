@@ -17,7 +17,7 @@ import {
 } from "@/lib/supabase/queries";
 import {
   Navigation, Wallet, Clock, TrendingUp,
-  AlertCircle, CheckCircle2, AlertTriangle,
+  AlertCircle, CheckCircle2, AlertTriangle, Building2,
 } from "lucide-react";
 
 // ── Tipos ────────────────────────────────────────────────────────────
@@ -97,24 +97,28 @@ export default function DashboardPage() {
   const [flujo, setFlujo] = useState<Flujo[]>([]);
   const [documentos, setDocumentos] = useState<Documento[]>([]);
   const [loading, setLoading] = useState(true);
+  const [contratista, setContratista] = useState<{ nombre: string; email: string | null } | null | undefined>(undefined);
 
   useEffect(() => {
     (async () => {
       const sb = createClient();
       const { data: { user } } = await sb.auth.getUser();
       if (!user) return;
-      const { data: perfil } = await sb.from("cr_usuarios").select("rol").eq("id", user.id).single();
+      const { data: perfil } = await sb.from("cr_usuarios").select("rol, contratista_id").eq("id", user.id).single();
       if (perfil?.rol === "contratista") { router.replace("/contratista"); return; }
-      const [t, v, f, d] = await Promise.all([
+      const [t, v, f, d, cRes] = await Promise.all([
         getTrayectos(user.id),
         getViaticos(user.id),
         getFlujo(user.id),
         getDocumentos(user.id),
+        fetch("/api/mi-contratista"),
       ]);
       setTrayectos(t as Trayecto[]);
       setViaticos(v as Viatico[]);
       setFlujo(f as Flujo[]);
       setDocumentos(d as Documento[]);
+      const cData = await cRes.json();
+      setContratista(cData.contratista ?? null);
       setLoading(false);
     })();
   }, []);
@@ -334,6 +338,54 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Mi Contratista */}
+      <div className="glass-card" style={{ padding: "20px 22px", marginTop: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: "rgba(0,230,118,0.12)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Building2 size={18} style={{ color: "var(--accent-green)" }} strokeWidth={1.5} />
+          </div>
+          <span style={{ fontSize: 15, fontWeight: 600, fontFamily: "DM Sans, sans-serif" }}>Mi Contratista</span>
+        </div>
+        {contratista ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, fontFamily: "DM Sans, sans-serif", color: "#fff" }}>
+                {contratista.nombre}
+              </div>
+              {contratista.email && (
+                <div style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
+                  {contratista.email}
+                </div>
+              )}
+            </div>
+            <span style={{
+              fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
+              background: "rgba(0,230,118,0.12)", color: "var(--accent-green)",
+              border: "1px solid rgba(0,230,118,0.25)",
+            }}>
+              Vinculado
+            </span>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <span style={{ fontSize: 14, color: "var(--text-secondary)", fontFamily: "DM Sans, sans-serif" }}>
+              Sin contratista asignado
+            </span>
+            <span style={{
+              fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
+              background: "rgba(255,255,255,0.06)", color: "var(--text-secondary)",
+              border: "1px solid rgba(255,255,255,0.1)",
+            }}>
+              Independiente
+            </span>
+          </div>
+        )}
       </div>
 
       <style>{`
