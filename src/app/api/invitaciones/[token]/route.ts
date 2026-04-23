@@ -53,14 +53,17 @@ export async function POST(
   if (invErr || !inv) return NextResponse.json({ error: "Invitación inválida" }, { status: 400 });
   if (inv.estado !== "pendiente") return NextResponse.json({ error: "Invitación ya usada" }, { status: 400 });
 
+  console.log("[unirse POST]", { token, userId: user.id, existingUser, invId: inv.id, contratistaId: inv.contratista_id });
+
   let nombreFinal = nombre;
 
   if (existingUser) {
-    const { error: updateErr } = await sb
+    const { error: updateUsuarioErr } = await sb
       .from("cr_usuarios")
       .update({ contratista_id: inv.contratista_id })
       .eq("id", user.id);
-    if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    console.log("[unirse POST] update cr_usuarios:", updateUsuarioErr ?? "ok");
+    if (updateUsuarioErr) return NextResponse.json({ error: updateUsuarioErr.message }, { status: 500 });
 
     const { data: perfil } = await sb.from("cr_usuarios").select("nombre").eq("id", user.id).single();
     nombreFinal = perfil?.nombre ?? "Un conductor";
@@ -73,13 +76,21 @@ export async function POST(
       rol: "conductor",
       contratista_id: inv.contratista_id,
     });
+    console.log("[unirse POST] upsert cr_usuarios:", upsertErr ?? "ok");
     if (upsertErr) return NextResponse.json({ error: upsertErr.message }, { status: 500 });
   }
 
-  await sb.from("cr_invitaciones").update({ estado: "aceptada" }).eq("id", inv.id);
+  const { error: updateInvErr } = await sb
+    .from("cr_invitaciones")
+    .update({ estado: "aceptada" })
+    .eq("id", inv.id);
+  console.log("[unirse POST] update cr_invitaciones estado=aceptada:", updateInvErr ?? "ok");
+  if (updateInvErr) {
+    console.error("[unirse POST] ERROR al marcar invitacion como aceptada:", updateInvErr);
+    return NextResponse.json({ error: `No se pudo marcar la invitación como aceptada: ${updateInvErr.message}` }, { status: 500 });
+  }
 
-  // Notify contratista
-  await sb.from("cr_notificaciones").insert({
+  const { error: notifErr } = await sb.from("cr_notificaciones").insert({
     usuario_id: inv.contratista_id,
     tipo: "conductor_unido",
     titulo: "Nuevo conductor en tu flota",
@@ -87,6 +98,7 @@ export async function POST(
     referencia_id: user.id,
     referencia_tipo: "conductor",
   });
+  console.log("[unirse POST] insert notificacion:", notifErr ?? "ok");
 
   return NextResponse.json({ ok: true });
 }
