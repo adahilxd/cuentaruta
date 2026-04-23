@@ -26,11 +26,16 @@ export async function POST(req: NextRequest) {
   const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://cuentaruta.com"}/unirse/${inv.token}`;
   const nombre = perfil?.nombre ?? "Tu contratista";
 
+  const keyPreview = process.env.RESEND_API_KEY
+    ? process.env.RESEND_API_KEY.slice(0, 8) + "..."
+    : "NOT_SET";
+  console.log("[invitaciones] RESEND_API_KEY preview:", keyPreview);
+
   let emailStatus = "skipped_no_key";
   if (process.env.RESEND_API_KEY) {
     try {
       const resend = new Resend(process.env.RESEND_API_KEY);
-      const from = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
+      const from = process.env.RESEND_FROM_EMAIL ?? "CuentaRuta <noreply@cuentaruta.com>";
       console.log("[invitaciones] sending email from:", from, "to:", email);
       const result = await resend.emails.send({
         from,
@@ -49,7 +54,7 @@ export async function POST(req: NextRequest) {
         `,
       });
       console.log("[invitaciones] resend result:", JSON.stringify(result));
-      emailStatus = result.error ? `error: ${result.error.message}` : "sent";
+      emailStatus = result.error ? `error: ${result.error.message}` : `sent_id:${result.data?.id}`;
     } catch (emailErr) {
       emailStatus = `exception: ${emailErr}`;
       console.error("[invitaciones] email exception:", emailErr);
