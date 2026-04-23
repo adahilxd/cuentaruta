@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Route, Eye, EyeOff, ArrowRight } from "lucide-react";
@@ -41,12 +41,26 @@ export default function Login() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/dashboard";
+  // Soportar ?redirect= (desde /unirse) y ?next= (flujo general)
+  const redirectTo = searchParams.get("redirect") ?? searchParams.get("next") ?? "/dashboard";
 
   const [form, setForm] = useState({ email: "", password: "" });
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // Precargar email si venimos de una invitación (/unirse/[token])
+  useEffect(() => {
+    const match = redirectTo.match(/\/unirse\/([^/?#]+)/);
+    if (!match) return;
+    const invToken = match[1];
+    fetch(`/api/invitaciones/${invToken}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.email) setForm(f => ({ ...f, email: d.email }));
+      })
+      .catch(() => {});
+  }, [redirectTo]);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -75,7 +89,7 @@ function LoginForm() {
       return;
     }
 
-    router.push(next);
+    router.push(redirectTo);
     router.refresh();
   }
 
