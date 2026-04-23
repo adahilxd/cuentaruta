@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET() {
   const sb = await createClient();
@@ -17,7 +17,7 @@ export async function GET() {
 
   const [{ data: contratistaRow }, { data: authData }] = await Promise.all([
     sb.from("cr_usuarios").select("nombre").eq("id", perfil.contratista_id).single(),
-    supabaseAdmin.auth.admin.getUserById(perfil.contratista_id),
+    getSupabaseAdmin().auth.admin.getUserById(perfil.contratista_id),
   ]);
 
   return NextResponse.json({
