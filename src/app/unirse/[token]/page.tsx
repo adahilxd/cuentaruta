@@ -113,11 +113,13 @@ export default function UnirsePage() {
         <form onSubmit={handleSubmit} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "28px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
           <div>
             <label style={labelStyle}>Correo electrónico</label>
-            <input value={inv!.email} disabled style={{ ...inputStyle, opacity: 0.5 }} />
+            <input name="email" autoComplete="email" value={inv!.email} disabled style={{ ...inputStyle, opacity: 0.5 }} />
           </div>
           <div>
             <label style={labelStyle}>Nombre completo *</label>
             <input
+              name="nombre"
+              autoComplete="name"
               value={nombre}
               onChange={e => setNombre(e.target.value)}
               placeholder="Ej: Carlos Pérez"
@@ -128,6 +130,8 @@ export default function UnirsePage() {
           <div>
             <label style={labelStyle}>Teléfono (WhatsApp)</label>
             <input
+              name="telefono"
+              autoComplete="tel"
               value={telefono}
               onChange={e => setTelefono(e.target.value)}
               placeholder="+57 300 000 0000"
@@ -138,6 +142,8 @@ export default function UnirsePage() {
           <div>
             <label style={labelStyle}>Placa del vehículo</label>
             <input
+              name="placa"
+              autoComplete="off"
               value={placa}
               onChange={e => setPlaca(e.target.value)}
               placeholder="ABC-123"
@@ -147,6 +153,8 @@ export default function UnirsePage() {
           <div>
             <label style={labelStyle}>Contraseña *</label>
             <input
+              name="password"
+              autoComplete="new-password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               type="password"
@@ -158,6 +166,8 @@ export default function UnirsePage() {
           <div>
             <label style={labelStyle}>Confirmar contraseña *</label>
             <input
+              name="confirmPassword"
+              autoComplete="new-password"
               value={confirm}
               onChange={e => setConfirm(e.target.value)}
               type="password"
