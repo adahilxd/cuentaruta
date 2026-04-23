@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const link = `${process.env.NEXT_PUBLIC_APP_URL || "https://cuentaruta.com"}/unirse/${inv.token}`;
+  const link = `${(process.env.NEXT_PUBLIC_APP_URL || "https://cuentaruta.com").trim()}/unirse/${inv.token}`;
   const nombre = perfil?.nombre ?? "Tu contratista";
 
   const keyPreview = process.env.RESEND_API_KEY
