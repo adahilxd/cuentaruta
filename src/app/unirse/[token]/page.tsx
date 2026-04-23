@@ -10,6 +10,7 @@ interface InvData {
   expires_at: string;
   contratista_nombre: string;
   contratista_id: string;
+  tieneaccount: boolean;
 }
 
 export default function UnirsePage() {
@@ -21,24 +22,69 @@ export default function UnirsePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // Flujo usuario existente
+  const [yaTieneCuenta, setYaTieneCuenta] = useState(false);
+
+  // Flujo registro nuevo
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [placa, setPlaca] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+
   const [submitting, setSubmitting] = useState(false);
   const [submitErr, setSubmitErr] = useState("");
 
   useEffect(() => {
-    fetch(`/api/invitaciones/${token}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) setError(d.error);
-        else setInv(d);
-      })
-      .catch(() => setError("Error al cargar la invitación"))
-      .finally(() => setLoading(false));
+    async function init() {
+      try {
+        const [invRes, { data: { user } }] = await Promise.all([
+          fetch(`/api/invitaciones/${token}`).then(r => r.json()),
+          sb.auth.getUser(),
+        ]);
+
+        if (invRes.error) { setError(invRes.error); return; }
+
+        const invData: InvData = invRes;
+        setInv(invData);
+
+        if (invData.tieneaccount) {
+          if (!user) {
+            router.replace(`/login?redirect=/unirse/${token}`);
+            return;
+          }
+          if (user.email !== invData.email) {
+            setError(`Esta invitación es para ${invData.email}. Estás conectado con otra cuenta.`);
+            return;
+          }
+          setYaTieneCuenta(true);
+        }
+      } catch {
+        setError("Error al cargar la invitación");
+      } finally {
+        setLoading(false);
+      }
+    }
+    init();
   }, [token]);
+
+  async function handleAceptar() {
+    setSubmitErr("");
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/invitaciones/${token}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ existingUser: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Error al aceptar invitación");
+      router.push("/dashboard");
+    } catch (err: unknown) {
+      setSubmitErr(err instanceof Error ? err.message : "Error inesperado");
+      setSubmitting(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -110,97 +156,135 @@ export default function UnirsePage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "28px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
-          <div>
-            <label style={labelStyle}>Correo electrónico</label>
-            <input name="email" autoComplete="email" value={inv!.email} disabled style={{ ...inputStyle, opacity: 0.5 }} />
+        {yaTieneCuenta ? (
+          /* ── Flujo: ya tiene cuenta ── */
+          <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "28px 24px", display: "flex", flexDirection: "column", gap: 20, textAlign: "center" }}>
+            <div style={{ fontSize: 40 }}>👋</div>
+            <div>
+              <p style={{ color: "#fff", fontFamily: "DM Sans, sans-serif", fontSize: 16, margin: "0 0 8px", fontWeight: 600 }}>
+                ¡Bienvenido de nuevo!
+              </p>
+              <p style={{ color: "rgba(255,255,255,0.55)", fontFamily: "DM Sans, sans-serif", fontSize: 14, margin: 0 }}>
+                Ya tienes una cuenta con <strong style={{ color: "#FFD600" }}>{inv!.email}</strong>.<br />
+                Al aceptar quedarás vinculado a la flota de <strong style={{ color: "#FFD600" }}>{inv!.contratista_nombre}</strong>.
+              </p>
+            </div>
+            {submitErr && (
+              <p style={{ color: "#FF4444", fontFamily: "DM Sans, sans-serif", fontSize: 13, margin: 0 }}>{submitErr}</p>
+            )}
+            <button
+              onClick={handleAceptar}
+              disabled={submitting}
+              style={{
+                height: 52,
+                background: submitting ? "rgba(255,214,0,0.4)" : "#FFD600",
+                color: "#080C18",
+                border: "none",
+                borderRadius: 10,
+                fontFamily: "DM Sans, sans-serif",
+                fontWeight: 700,
+                fontSize: 16,
+                cursor: submitting ? "not-allowed" : "pointer",
+                transition: "opacity 0.2s",
+              }}
+            >
+              {submitting ? "Aceptando…" : "Aceptar invitación"}
+            </button>
           </div>
-          <div>
-            <label style={labelStyle}>Nombre completo *</label>
-            <input
-              name="nombre"
-              autoComplete="name"
-              value={nombre}
-              onChange={e => setNombre(e.target.value)}
-              placeholder="Ej: Carlos Pérez"
-              required
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Teléfono (WhatsApp)</label>
-            <input
-              name="telefono"
-              autoComplete="tel"
-              value={telefono}
-              onChange={e => setTelefono(e.target.value)}
-              placeholder="+57 300 000 0000"
-              type="tel"
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Placa del vehículo</label>
-            <input
-              name="placa"
-              autoComplete="off"
-              value={placa}
-              onChange={e => setPlaca(e.target.value)}
-              placeholder="ABC-123"
-              style={{ ...inputStyle, textTransform: "uppercase" }}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Contraseña *</label>
-            <input
-              name="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              type="password"
-              placeholder="Mínimo 6 caracteres"
-              required
-              style={inputStyle}
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>Confirmar contraseña *</label>
-            <input
-              name="confirmPassword"
-              autoComplete="new-password"
-              value={confirm}
-              onChange={e => setConfirm(e.target.value)}
-              type="password"
-              placeholder="Repite tu contraseña"
-              required
-              style={inputStyle}
-            />
-          </div>
+        ) : (
+          /* ── Flujo: registro nuevo ── */
+          <form onSubmit={handleSubmit} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 16, padding: "28px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+            <div>
+              <label style={labelStyle}>Correo electrónico</label>
+              <input name="email" autoComplete="email" value={inv!.email} disabled style={{ ...inputStyle, opacity: 0.5 }} />
+            </div>
+            <div>
+              <label style={labelStyle}>Nombre completo *</label>
+              <input
+                name="nombre"
+                autoComplete="name"
+                value={nombre}
+                onChange={e => setNombre(e.target.value)}
+                placeholder="Ej: Carlos Pérez"
+                required
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Teléfono (WhatsApp)</label>
+              <input
+                name="telefono"
+                autoComplete="tel"
+                value={telefono}
+                onChange={e => setTelefono(e.target.value)}
+                placeholder="+57 300 000 0000"
+                type="tel"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Placa del vehículo</label>
+              <input
+                name="placa"
+                autoComplete="off"
+                value={placa}
+                onChange={e => setPlaca(e.target.value)}
+                placeholder="ABC-123"
+                style={{ ...inputStyle, textTransform: "uppercase" }}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Contraseña *</label>
+              <input
+                name="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                type="password"
+                placeholder="Mínimo 6 caracteres"
+                required
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Confirmar contraseña *</label>
+              <input
+                name="confirmPassword"
+                autoComplete="new-password"
+                value={confirm}
+                onChange={e => setConfirm(e.target.value)}
+                type="password"
+                placeholder="Repite tu contraseña"
+                required
+                style={inputStyle}
+              />
+            </div>
 
-          {submitErr && (
-            <p style={{ color: "#FF4444", fontFamily: "DM Sans, sans-serif", fontSize: 13, margin: 0 }}>{submitErr}</p>
-          )}
+            {submitErr && (
+              <p style={{ color: "#FF4444", fontFamily: "DM Sans, sans-serif", fontSize: 13, margin: 0 }}>{submitErr}</p>
+            )}
 
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              marginTop: 4,
-              height: 52,
-              background: submitting ? "rgba(255,214,0,0.4)" : "#FFD600",
-              color: "#080C18",
-              border: "none",
-              borderRadius: 10,
-              fontFamily: "DM Sans, sans-serif",
-              fontWeight: 700,
-              fontSize: 16,
-              cursor: submitting ? "not-allowed" : "pointer",
-              transition: "opacity 0.2s",
-            }}
-          >
-            {submitting ? "Creando cuenta…" : "Aceptar invitación"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={submitting}
+              style={{
+                marginTop: 4,
+                height: 52,
+                background: submitting ? "rgba(255,214,0,0.4)" : "#FFD600",
+                color: "#080C18",
+                border: "none",
+                borderRadius: 10,
+                fontFamily: "DM Sans, sans-serif",
+                fontWeight: 700,
+                fontSize: 16,
+                cursor: submitting ? "not-allowed" : "pointer",
+                transition: "opacity 0.2s",
+              }}
+            >
+              {submitting ? "Creando cuenta…" : "Aceptar invitación"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
