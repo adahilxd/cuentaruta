@@ -38,10 +38,11 @@ const LBL_S: React.CSSProperties = {
 
 // ── Modal de formulario ───────────────────────────────────────────────
 function TrayectoModal({
-  trayecto, conductorId, onClose, onSave,
+  trayecto, conductorId, tieneContratista, onClose, onSave,
 }: {
   trayecto: Partial<Trayecto> | null;
   conductorId: string;
+  tieneContratista: boolean;
   onClose: () => void;
   onSave: (data: Partial<Trayecto>) => Promise<void>;
 }) {
@@ -297,17 +298,19 @@ function TrayectoModal({
             placeholder="Manizales → La Dorada" style={INP} />
         </div>
 
-        {/* ESTADO */}
-        <div style={{ marginBottom: 12 }}>
-          <label style={LBL_S}>Estado</label>
-          <select value={form.estado}
-            onChange={e => setForm(f => ({ ...f, estado: e.target.value }))}
-            style={{ ...INP, appearance: "none" as const }}>
-            <option value="pendiente">Pendiente</option>
-            <option value="pagado">Pagado</option>
-            <option value="en_revision">En revisión</option>
-          </select>
-        </div>
+        {/* ESTADO — solo editable si no tiene contratista asignado */}
+        {!tieneContratista && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={LBL_S}>Estado</label>
+            <select value={form.estado}
+              onChange={e => setForm(f => ({ ...f, estado: e.target.value }))}
+              style={{ ...INP, appearance: "none" as const }}>
+              <option value="pendiente">Pendiente</option>
+              <option value="pagado">Pagado</option>
+              <option value="en_revision">En revisión</option>
+            </select>
+          </div>
+        )}
 
         {/* NOTAS */}
         <div style={{ marginBottom: 20 }}>
@@ -612,6 +615,7 @@ export default function TrayectosPage() {
         <TrayectoModal
           trayecto={modal}
           conductorId={conductorId}
+          tieneContratista={tieneContratista}
           onClose={() => setModal(undefined)}
           onSave={handleSave}
         />

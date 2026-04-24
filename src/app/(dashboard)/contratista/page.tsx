@@ -88,7 +88,7 @@ export default function ContratistaPage() {
       sb.from("cr_trayectos")
         .select("id, conductor_id, fecha, origen, destino, km, valor, estado, cr_usuarios!conductor_id(nombre)")
         .in("conductor_id", conductorIds)
-        .eq("estado", "pendiente")
+        .in("estado", ["pendiente", "en_revision"])
         .order("fecha", { ascending: false }),
       sb.from("cr_viaticos")
         .select("id, conductor_id, fecha, categoria, descripcion, monto, estado, cr_usuarios!conductor_id(nombre)")
@@ -118,6 +118,16 @@ export default function ContratistaPage() {
     if (res.ok) { setInvMsg("✅ Invitación enviada"); setInvEmail(""); load(); }
     else setInvMsg(`❌ ${d.error}`);
     setInvSending(false);
+  }
+
+  async function marcarEnRevision(id: string) {
+    const res = await fetch(`/api/contratista/trayectos/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estado: "en_revision" }),
+    });
+    if (!res.ok) { const d = await res.json(); console.error("[marcarEnRevision]", d.error); }
+    load();
   }
 
   async function aprobarTrayecto(id: string) {
@@ -283,16 +293,26 @@ export default function ContratistaPage() {
             </div>
           )}
 
-          {/* TRAYECTOS PENDIENTES */}
+          {/* TRAYECTOS */}
           {tab === "trayectos" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {trayectos.length === 0 && <p style={emptyStyle}>No hay trayectos pendientes de aprobación.</p>}
+              {trayectos.length === 0 && <p style={emptyStyle}>No hay trayectos pendientes de revisión.</p>}
               {trayectos.map(t => (
                 <div key={t.id} style={rowStyle}>
                   <div style={{ flex: 1 }}>
-                    <p style={{ color: "#fff", fontFamily: "DM Sans, sans-serif", fontWeight: 600, margin: "0 0 2px" }}>
-                      {t.origen} → {t.destino}
-                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                      <p style={{ color: "#fff", fontFamily: "DM Sans, sans-serif", fontWeight: 600, margin: 0 }}>
+                        {t.origen} → {t.destino}
+                      </p>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
+                        background: t.estado === "pendiente" ? "rgba(255,214,0,0.15)" : "rgba(99,179,237,0.15)",
+                        color: t.estado === "pendiente" ? "#FFD600" : "#63B3ED",
+                        fontFamily: "DM Sans, sans-serif",
+                      }}>
+                        {t.estado === "pendiente" ? "Pendiente" : "En revisión"}
+                      </span>
+                    </div>
                     <p style={{ color: "rgba(255,255,255,0.4)", fontFamily: "DM Sans, sans-serif", fontSize: 13, margin: "0 0 2px" }}>
                       {t.fecha} · {t.km} km · {fmt(t.valor)}
                     </p>
@@ -301,12 +321,21 @@ export default function ContratistaPage() {
                     </p>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                    <button onClick={() => aprobarTrayecto(t.id)} style={btnAprStyle}>
-                      <CheckCircle size={16} strokeWidth={1.5} />
-                    </button>
-                    <button onClick={() => { setMotivoModal({ tipo: "trayecto", id: t.id }); setMotivoText(""); }} style={btnRejStyle}>
-                      <XCircle size={16} strokeWidth={1.5} />
-                    </button>
+                    {t.estado === "pendiente" && (
+                      <button onClick={() => marcarEnRevision(t.id)} style={btnRevStyle}>
+                        <Clock size={14} strokeWidth={1.5} /> En revisión
+                      </button>
+                    )}
+                    {t.estado === "en_revision" && (
+                      <>
+                        <button onClick={() => aprobarTrayecto(t.id)} style={btnAprStyle} title="Aprobar">
+                          <CheckCircle size={16} strokeWidth={1.5} />
+                        </button>
+                        <button onClick={() => { setMotivoModal({ tipo: "trayecto", id: t.id }); setMotivoText(""); }} style={btnRejStyle} title="Rechazar">
+                          <XCircle size={16} strokeWidth={1.5} />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}
@@ -480,6 +509,23 @@ const btnSecStyle: React.CSSProperties = {
   alignItems: "center",
   gap: 6,
   padding: "0 14px",
+};
+
+const btnRevStyle: React.CSSProperties = {
+  height: 36,
+  padding: "0 14px",
+  background: "rgba(99,179,237,0.15)",
+  border: "1px solid rgba(99,179,237,0.3)",
+  borderRadius: 8,
+  color: "#63B3ED",
+  cursor: "pointer",
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  fontFamily: "DM Sans, sans-serif",
+  fontSize: 13,
+  fontWeight: 600,
+  whiteSpace: "nowrap" as const,
 };
 
 const btnAprStyle: React.CSSProperties = {
