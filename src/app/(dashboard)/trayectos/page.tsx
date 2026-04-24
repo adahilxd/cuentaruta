@@ -369,6 +369,7 @@ export default function TrayectosPage() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<Partial<Trayecto> | null | undefined>(undefined);
   const [conductorId, setConductorId] = useState("");
+  const [tieneContratista, setTieneContratista] = useState(false);
   const [search, setSearch] = useState("");
   const [filterSem, setFilterSem] = useState<number | "">("");
   const [filterEst, setFilterEst] = useState("");
@@ -387,8 +388,12 @@ export default function TrayectosPage() {
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
     setConductorId(user.id);
-    const data = await getTrayectos(user.id);
-    setRows(data as Trayecto[]);
+    const [trayData, perfilData] = await Promise.all([
+      getTrayectos(user.id),
+      sb.from("cr_usuarios").select("contratista_id").eq("id", user.id).single(),
+    ]);
+    setRows(trayData as Trayecto[]);
+    setTieneContratista(!!perfilData.data?.contratista_id);
     setLoading(false);
   }
 
@@ -423,11 +428,13 @@ export default function TrayectosPage() {
   }, []);
 
   const toggleEstado = useCallback(async (t: Trayecto) => {
+    // Si el conductor tiene contratista asignado, solo el contratista puede cambiar el estado
+    if (tieneContratista) return;
     const next = t.estado === "pagado" ? "pendiente" : t.estado === "pendiente" ? "en_revision" : "pagado";
     const sb = createClient();
     await sb.from("cr_trayectos").update({ estado: next }).eq("id", t.id);
     setRows((prev) => prev.map((r) => r.id === t.id ? { ...r, estado: next } : r));
-  }, []);
+  }, [tieneContratista]);
 
   const handleDelete = useCallback(async (id: string) => {
     if (!confirm("¿Eliminar este trayecto?")) return;
@@ -534,7 +541,7 @@ export default function TrayectosPage() {
                       </td>
                       <td style={{ padding: "12px 14px", fontSize: 12, color: "var(--text-tertiary)" }}>{t.factura ?? "—"}</td>
                       <td style={{ padding: "12px 14px" }}>
-                        <EstadoBadge estado={t.estado} onClick={() => toggleEstado(t)} />
+                        <EstadoBadge estado={t.estado} onClick={tieneContratista ? undefined : () => toggleEstado(t)} />
                       </td>
                       <td style={{ padding: "12px 8px" }}>
                         <div style={{ display: "flex", gap: 4 }}>
@@ -566,7 +573,7 @@ export default function TrayectosPage() {
                       {fmtFecha(t.fecha)} · Sem. {t.semana}{t.factura ? ` · #${t.factura}` : ""}
                     </div>
                     <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <EstadoBadge estado={t.estado} onClick={() => toggleEstado(t)} />
+                      <EstadoBadge estado={t.estado} onClick={tieneContratista ? undefined : () => toggleEstado(t)} />
                       {t.extras ? <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>{t.extras}h extras</span> : null}
                     </div>
                     {t.estado === "rechazado" && t.motivo_rechazo && (

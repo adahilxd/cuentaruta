@@ -64,21 +64,41 @@ export default function ContratistaPage() {
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
 
-    const [condRes, invRes, trayRes, viaRes] = await Promise.all([
+    // 1. Conductores + invitaciones en paralelo
+    const [condRes, invRes] = await Promise.all([
       sb.from("cr_usuarios").select("id, nombre, telefono, placa, created_at")
         .eq("contratista_id", user.id).eq("rol", "conductor"),
       sb.from("cr_invitaciones").select("id, email, estado, created_at, expires_at")
         .eq("contratista_id", user.id).order("created_at", { ascending: false }),
-      sb.from("cr_trayectos").select("id, conductor_id, fecha, origen, destino, km, valor, estado, cr_usuarios!conductor_id(nombre)")
-        .in("conductor_id", (await sb.from("cr_usuarios").select("id").eq("contratista_id", user.id).eq("rol", "conductor")).data?.map(c => c.id) ?? [])
-        .eq("estado", "pendiente").order("fecha", { ascending: false }),
-      sb.from("cr_viaticos").select("id, conductor_id, fecha, categoria, descripcion, monto, estado, cr_usuarios!conductor_id(nombre)")
-        .in("conductor_id", (await sb.from("cr_usuarios").select("id").eq("contratista_id", user.id).eq("rol", "conductor")).data?.map(c => c.id) ?? [])
-        .eq("estado", "pendiente").order("fecha", { ascending: false }),
     ]);
 
+    const conductorIds = (condRes.data ?? []).map(c => c.id);
     setConductores((condRes.data ?? []) as Conductor[]);
     setInvitaciones((invRes.data ?? []) as Invitacion[]);
+
+    // 2. Trayectos y viáticos solo si hay conductores vinculados
+    if (conductorIds.length === 0) {
+      setTrayectos([]);
+      setViaticos([]);
+      setLoading(false);
+      return;
+    }
+
+    const [trayRes, viaRes] = await Promise.all([
+      sb.from("cr_trayectos")
+        .select("id, conductor_id, fecha, origen, destino, km, valor, estado, cr_usuarios!conductor_id(nombre)")
+        .in("conductor_id", conductorIds)
+        .eq("estado", "pendiente")
+        .order("fecha", { ascending: false }),
+      sb.from("cr_viaticos")
+        .select("id, conductor_id, fecha, categoria, descripcion, monto, estado, cr_usuarios!conductor_id(nombre)")
+        .in("conductor_id", conductorIds)
+        .eq("estado", "pendiente")
+        .order("fecha", { ascending: false }),
+    ]);
+
+    console.log("[contratista load] conductorIds:", conductorIds, "trayectos:", trayRes.data?.length ?? 0, trayRes.error, "viaticos:", viaRes.data?.length ?? 0, viaRes.error);
+
     setTrayectos((trayRes.data ?? []) as unknown as TrayectoPendiente[]);
     setViaticos((viaRes.data ?? []) as unknown as ViaticoPendiente[]);
     setLoading(false);
@@ -101,49 +121,42 @@ export default function ContratistaPage() {
   }
 
   async function aprobarTrayecto(id: string) {
-    const { data: { user } } = await sb.auth.getUser();
-    await sb.from("cr_trayectos").update({ estado: "aprobado", aprobado_por: user!.id, aprobado_at: new Date().toISOString() }).eq("id", id);
+    const res = await fetch(`/api/contratista/trayectos/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estado: "aprobado" }),
+    });
+    if (!res.ok) { const d = await res.json(); console.error("[aprobarTrayecto]", d.error); }
     load();
   }
 
   async function rechazarTrayecto(id: string, motivo: string) {
-    const { data: { user } } = await sb.auth.getUser();
-    await sb.from("cr_trayectos").update({ estado: "rechazado", aprobado_por: user!.id, aprobado_at: new Date().toISOString(), motivo_rechazo: motivo }).eq("id", id);
-    // Notify conductor
-    const tray = trayectos.find(t => t.id === id);
-    if (tray) {
-      await sb.from("cr_notificaciones").insert({
-        usuario_id: tray.conductor_id,
-        tipo: "trayecto_rechazado",
-        titulo: "Trayecto rechazado",
-        mensaje: `Tu trayecto del ${tray.fecha} fue rechazado. Motivo: ${motivo}`,
-        referencia_id: id,
-        referencia_tipo: "trayecto",
-      });
-    }
+    const res = await fetch(`/api/contratista/trayectos/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estado: "rechazado", motivo_rechazo: motivo }),
+    });
+    if (!res.ok) { const d = await res.json(); console.error("[rechazarTrayecto]", d.error); }
     load();
   }
 
   async function aprobarViatico(id: string) {
-    const { data: { user } } = await sb.auth.getUser();
-    await sb.from("cr_viaticos").update({ estado: "aprobado", aprobado_por: user!.id, aprobado_at: new Date().toISOString() }).eq("id", id);
+    const res = await fetch(`/api/contratista/viaticos/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estado: "aprobado" }),
+    });
+    if (!res.ok) { const d = await res.json(); console.error("[aprobarViatico]", d.error); }
     load();
   }
 
   async function rechazarViatico(id: string, motivo: string) {
-    const { data: { user } } = await sb.auth.getUser();
-    await sb.from("cr_viaticos").update({ estado: "rechazado", aprobado_por: user!.id, aprobado_at: new Date().toISOString(), motivo_rechazo: motivo }).eq("id", id);
-    const via = viaticos.find(v => v.id === id);
-    if (via) {
-      await sb.from("cr_notificaciones").insert({
-        usuario_id: via.conductor_id,
-        tipo: "viatico_rechazado",
-        titulo: "Viático rechazado",
-        mensaje: `Tu viático de ${via.categoria} del ${via.fecha} fue rechazado. Motivo: ${motivo}`,
-        referencia_id: id,
-        referencia_tipo: "viatico",
-      });
-    }
+    const res = await fetch(`/api/contratista/viaticos/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estado: "rechazado", motivo_rechazo: motivo }),
+    });
+    if (!res.ok) { const d = await res.json(); console.error("[rechazarViatico]", d.error); }
     load();
   }
 
