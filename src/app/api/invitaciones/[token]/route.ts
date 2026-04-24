@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { getUserByEmail } from "@/lib/supabase-admin";
+import { getUserByEmail, getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(
   _req: NextRequest,
@@ -80,14 +80,16 @@ export async function POST(
     if (upsertErr) return NextResponse.json({ error: upsertErr.message }, { status: 500 });
   }
 
-  const { error: updateInvErr } = await sb
+  const sbAdmin = getSupabaseAdmin();
+  const { data: updatedInv, error: updateInvErr } = await sbAdmin
     .from("cr_invitaciones")
     .update({ estado: "aceptada" })
-    .eq("id", inv.id);
-  console.log("[unirse POST] update cr_invitaciones estado=aceptada:", updateInvErr ?? "ok");
-  if (updateInvErr) {
-    console.error("[unirse POST] ERROR al marcar invitacion como aceptada:", updateInvErr);
-    return NextResponse.json({ error: `No se pudo marcar la invitación como aceptada: ${updateInvErr.message}` }, { status: 500 });
+    .eq("id", inv.id)
+    .select("id, estado");
+  console.log("[unirse POST] update cr_invitaciones estado=aceptada:", updateInvErr ?? "ok", "| filas actualizadas:", updatedInv?.length ?? 0, "| data:", JSON.stringify(updatedInv));
+  if (updateInvErr || !updatedInv?.length) {
+    console.error("[unirse POST] ERROR o 0 filas al marcar invitacion como aceptada:", updateInvErr, "data:", updatedInv);
+    return NextResponse.json({ error: `No se pudo marcar la invitación como aceptada: ${updateInvErr?.message ?? "0 filas actualizadas — verifique RLS o estado de la invitación"}` }, { status: 500 });
   }
 
   const { error: notifErr } = await sb.from("cr_notificaciones").insert({
