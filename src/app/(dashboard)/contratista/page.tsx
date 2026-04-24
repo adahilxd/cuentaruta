@@ -88,7 +88,6 @@ export default function ContratistaPage() {
       sb.from("cr_trayectos")
         .select("id, conductor_id, fecha, origen, destino, km, valor, estado, cr_usuarios!conductor_id(nombre)")
         .in("conductor_id", conductorIds)
-        .in("estado", ["pendiente", "en_revision"])
         .order("fecha", { ascending: false }),
       sb.from("cr_viaticos")
         .select("id, conductor_id, fecha, categoria, descripcion, monto, estado, cr_usuarios!conductor_id(nombre)")
@@ -189,12 +188,13 @@ export default function ContratistaPage() {
     URL.revokeObjectURL(url);
   }
 
-  const pendCount = trayectos.length + viaticos.length;
+  const trayectosAccionables = trayectos.filter(t => t.estado === "pendiente" || t.estado === "en_revision").length;
+  const pendCount = trayectosAccionables + viaticos.length;
 
   const tabs: { id: Tab; label: string; badge?: number }[] = [
     { id: "overview", label: "Resumen" },
     { id: "conductores", label: "Conductores", badge: conductores.length },
-    { id: "trayectos", label: "Trayectos", badge: trayectos.length },
+    { id: "trayectos", label: "Trayectos", badge: trayectosAccionables },
     { id: "viaticos", label: "Viáticos", badge: viaticos.length },
     { id: "invitaciones", label: "Invitaciones" },
   ];
@@ -261,7 +261,7 @@ export default function ContratistaPage() {
               {[
                 { label: "Conductores", value: conductores.length, icon: Users, color: "#00E676" },
                 { label: "Pend. aprobación", value: pendCount, icon: Clock, color: "#FFD600" },
-                { label: "Tray. pendientes", value: trayectos.length, icon: Clock, color: "#FFD600" },
+                { label: "Tray. por revisar", value: trayectosAccionables, icon: Clock, color: "#FFD600" },
                 { label: "Viát. pendientes", value: viaticos.length, icon: Clock, color: "#FFD600" },
               ].map(card => (
                 <div key={card.label} style={cardStyle}>
@@ -296,49 +296,58 @@ export default function ContratistaPage() {
           {/* TRAYECTOS */}
           {tab === "trayectos" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {trayectos.length === 0 && <p style={emptyStyle}>No hay trayectos pendientes de revisión.</p>}
-              {trayectos.map(t => (
-                <div key={t.id} style={rowStyle}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                      <p style={{ color: "#fff", fontFamily: "DM Sans, sans-serif", fontWeight: 600, margin: 0 }}>
-                        {t.origen} → {t.destino}
+              {trayectos.length === 0 && <p style={emptyStyle}>No hay trayectos registrados.</p>}
+              {[...trayectos].sort((a, b) => b.fecha.localeCompare(a.fecha)).map(t => {
+                const estadoBadge: Record<string, { bg: string; color: string; label: string }> = {
+                  pendiente:   { bg: "rgba(255,214,0,0.15)",   color: "#FFD600", label: "Pendiente" },
+                  en_revision: { bg: "rgba(99,179,237,0.15)",  color: "#63B3ED", label: "En revisión" },
+                  aprobado:    { bg: "rgba(0,230,118,0.15)",   color: "#00E676", label: "Aprobado" },
+                  rechazado:   { bg: "rgba(255,68,68,0.15)",   color: "#FF4444", label: "Rechazado" },
+                  pagado:      { bg: "rgba(168,85,247,0.15)",  color: "#A855F7", label: "Pagado" },
+                };
+                const badge = estadoBadge[t.estado] ?? estadoBadge.pendiente;
+                return (
+                  <div key={t.id} style={rowStyle}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2, flexWrap: "wrap" }}>
+                        <p style={{ color: "#fff", fontFamily: "DM Sans, sans-serif", fontWeight: 600, margin: 0 }}>
+                          {t.origen} → {t.destino}
+                        </p>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
+                          background: badge.bg, color: badge.color,
+                          fontFamily: "DM Sans, sans-serif",
+                        }}>
+                          {badge.label}
+                        </span>
+                      </div>
+                      <p style={{ color: "rgba(255,255,255,0.4)", fontFamily: "DM Sans, sans-serif", fontSize: 13, margin: "0 0 2px" }}>
+                        {t.fecha} · {t.km} km · {fmt(t.valor)}
                       </p>
-                      <span style={{
-                        fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 99,
-                        background: t.estado === "pendiente" ? "rgba(255,214,0,0.15)" : "rgba(99,179,237,0.15)",
-                        color: t.estado === "pendiente" ? "#FFD600" : "#63B3ED",
-                        fontFamily: "DM Sans, sans-serif",
-                      }}>
-                        {t.estado === "pendiente" ? "Pendiente" : "En revisión"}
-                      </span>
+                      <p style={{ color: "#FFD600", fontFamily: "DM Sans, sans-serif", fontSize: 12, margin: 0 }}>
+                        {(t.cr_usuarios as { nombre: string } | null)?.nombre ?? "Conductor"}
+                      </p>
                     </div>
-                    <p style={{ color: "rgba(255,255,255,0.4)", fontFamily: "DM Sans, sans-serif", fontSize: 13, margin: "0 0 2px" }}>
-                      {t.fecha} · {t.km} km · {fmt(t.valor)}
-                    </p>
-                    <p style={{ color: "#FFD600", fontFamily: "DM Sans, sans-serif", fontSize: 12, margin: 0 }}>
-                      {(t.cr_usuarios as { nombre: string } | null)?.nombre ?? "Conductor"}
-                    </p>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                    {t.estado === "pendiente" && (
-                      <button onClick={() => marcarEnRevision(t.id)} style={btnRevStyle}>
-                        <Clock size={14} strokeWidth={1.5} /> En revisión
-                      </button>
-                    )}
-                    {t.estado === "en_revision" && (
-                      <>
-                        <button onClick={() => aprobarTrayecto(t.id)} style={btnAprStyle} title="Aprobar">
-                          <CheckCircle size={16} strokeWidth={1.5} />
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                      {t.estado === "pendiente" && (
+                        <button onClick={() => marcarEnRevision(t.id)} style={btnRevStyle}>
+                          <Clock size={14} strokeWidth={1.5} /> En revisión
                         </button>
-                        <button onClick={() => { setMotivoModal({ tipo: "trayecto", id: t.id }); setMotivoText(""); }} style={btnRejStyle} title="Rechazar">
-                          <XCircle size={16} strokeWidth={1.5} />
-                        </button>
-                      </>
-                    )}
+                      )}
+                      {t.estado === "en_revision" && (
+                        <>
+                          <button onClick={() => aprobarTrayecto(t.id)} style={{ ...btnAprStyle, width: "auto", padding: "0 12px", gap: 6, fontFamily: "DM Sans, sans-serif", fontSize: 13, fontWeight: 600 }}>
+                            <CheckCircle size={14} strokeWidth={1.5} /> Aprobar
+                          </button>
+                          <button onClick={() => { setMotivoModal({ tipo: "trayecto", id: t.id }); setMotivoText(""); }} style={{ ...btnRejStyle, width: "auto", padding: "0 12px", gap: 6, fontFamily: "DM Sans, sans-serif", fontSize: 13, fontWeight: 600 }}>
+                            <XCircle size={14} strokeWidth={1.5} /> Rechazar
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
