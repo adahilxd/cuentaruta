@@ -68,6 +68,7 @@ function TrayectoModal({
   const [saving, setSaving]         = useState(false);
   const [uploadingIni, setUpIni]    = useState(false);
   const [uploadingFin, setUpFin]    = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [lightbox, setLightbox]     = useState<string | null>(null);
   const fileIniRef = useRef<HTMLInputElement>(null);
   const fileFinRef = useRef<HTMLInputElement>(null);
@@ -88,6 +89,8 @@ function TrayectoModal({
 
   async function uploadFoto(file: File, tipo: "inicio" | "fin") {
     tipo === "inicio" ? setUpIni(true) : setUpFin(true);
+    setUploadError(null);
+    console.log("[uploadFoto] Iniciando:", { tipo, fileSize: file.size, fileType: file.type, conductorId: conductorId || "(VACÍO)", trayectoId: trayectoId.current });
     try {
       const fd = new FormData();
       fd.append("file", file);
@@ -96,9 +99,16 @@ function TrayectoModal({
       fd.append("tipo", tipo);
       const res = await fetch("/api/trayectos/upload-foto", { method: "POST", body: fd });
       const json = await res.json();
+      console.log("[uploadFoto] Respuesta API:", { status: res.status, json });
       if (json.url) {
         setForm(f => ({ ...f, [tipo === "inicio" ? "foto_ini_url" : "foto_fin_url"]: json.url }));
+      } else {
+        setUploadError(json.error ?? "Error al subir la foto");
+        console.error("[uploadFoto] ERROR:", json);
       }
+    } catch (e) {
+      setUploadError("Error de red al subir la foto");
+      console.error("[uploadFoto] EXCEPCIÓN fetch:", e);
     } finally {
       tipo === "inicio" ? setUpIni(false) : setUpFin(false);
     }
@@ -244,6 +254,17 @@ function TrayectoModal({
               alignItems: "center", justifyContent: "center", cursor: "zoom-out",
             }}>
               <img src={lightbox} alt="foto" style={{ maxWidth: "95vw", maxHeight: "90vh", borderRadius: 8, objectFit: "contain" }} />
+            </div>
+          )}
+
+          {/* Error de upload */}
+          {uploadError && (
+            <div style={{
+              padding: "8px 12px", borderRadius: 8, marginBottom: 8,
+              background: "rgba(255,68,68,0.1)", border: "1px solid rgba(255,68,68,0.3)",
+              color: "#FF4444", fontSize: 12,
+            }}>
+              ⚠️ {uploadError}
             </div>
           )}
 

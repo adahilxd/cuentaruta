@@ -1,2 +1,2 @@
-.env.local
-.env*.local
+# No excluir .env.local — las vars de entorno del servidor las necesita el runtime
+# SUPABASE_SERVICE_ROLE_KEY y otras están ahora en Vercel Dashboard (vercel env add)
