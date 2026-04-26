@@ -5,8 +5,8 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
 import { getTrayectos, formatCurrency, fmtFecha, isoWeekOfYear } from "@/lib/supabase/queries";
 import {
-  Plus, X, Search, Camera,
-  Navigation, Pencil, Trash2,
+  Plus, Search, Camera,
+  Navigation, Pencil, Trash2, ZoomIn,
 } from "lucide-react";
 
 type Trayecto = {
@@ -68,8 +68,11 @@ function TrayectoModal({
   const [saving, setSaving]         = useState(false);
   const [uploadingIni, setUpIni]    = useState(false);
   const [uploadingFin, setUpFin]    = useState(false);
+  const [lightbox, setLightbox]     = useState<string | null>(null);
   const fileIniRef = useRef<HTMLInputElement>(null);
   const fileFinRef = useRef<HTMLInputElement>(null);
+  // UUID estable para el trayecto: existente o generado para el nuevo
+  const trayectoId = useRef<string>(trayecto?.id ?? crypto.randomUUID());
 
   const kmIni   = form.km_ini ? parseFloat(form.km_ini) : null;
   const kmFin   = form.km_fin ? parseFloat(form.km_fin) : null;
@@ -84,16 +87,21 @@ function TrayectoModal({
   }
 
   async function uploadFoto(file: File, tipo: "inicio" | "fin") {
-    const sb  = createClient();
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `${conductorId}/${form.fecha ?? "sin-fecha"}/${tipo}_${Date.now()}.${ext}`;
     tipo === "inicio" ? setUpIni(true) : setUpFin(true);
-    const { error } = await sb.storage.from("odometros").upload(path, file, { upsert: true });
-    if (!error) {
-      const { data } = sb.storage.from("odometros").getPublicUrl(path);
-      setForm(f => ({ ...f, [tipo === "inicio" ? "foto_ini_url" : "foto_fin_url"]: data.publicUrl }));
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("conductorId", conductorId);
+      fd.append("trayectoId", trayectoId.current);
+      fd.append("tipo", tipo);
+      const res = await fetch("/api/trayectos/upload-foto", { method: "POST", body: fd });
+      const json = await res.json();
+      if (json.url) {
+        setForm(f => ({ ...f, [tipo === "inicio" ? "foto_ini_url" : "foto_fin_url"]: json.url }));
+      }
+    } finally {
+      tipo === "inicio" ? setUpIni(false) : setUpFin(false);
     }
-    tipo === "inicio" ? setUpIni(false) : setUpFin(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -102,7 +110,7 @@ function TrayectoModal({
     const horasCalc  = parseFloat(calcHoras() || "0") || null;
     const semana     = isoWeekOfYear(new Date(form.fecha + "T12:00:00"));
     await onSave({
-      ...(trayecto?.id ? { id: trayecto.id } : {}),
+      id: trayectoId.current,
       fecha:        form.fecha,
       semana,
       cliente:      form.cliente  || null,
@@ -200,8 +208,12 @@ function TrayectoModal({
                 {uploadingIni ? "Subiendo…" : form.foto_ini_url ? "Inicio ✓" : "Foto inicio"}
               </button>
               {form.foto_ini_url && (
-                <img src={form.foto_ini_url} alt="inicio"
-                  style={{ width: "100%", height: 52, objectFit: "cover", borderRadius: 6, marginTop: 4 }} />
+                <div style={{ position: "relative", marginTop: 4 }}>
+                  <img src={form.foto_ini_url} alt="inicio"
+                    onClick={() => setLightbox(form.foto_ini_url)}
+                    style={{ width: "100%", height: 72, objectFit: "cover", borderRadius: 6, cursor: "zoom-in" }} />
+                  <ZoomIn size={14} style={{ position: "absolute", bottom: 4, right: 4, color: "#fff", opacity: 0.8, pointerEvents: "none" }} />
+                </div>
               )}
             </div>
             <div>
@@ -214,11 +226,26 @@ function TrayectoModal({
                 {uploadingFin ? "Subiendo…" : form.foto_fin_url ? "Fin ✓" : "Foto fin"}
               </button>
               {form.foto_fin_url && (
-                <img src={form.foto_fin_url} alt="fin"
-                  style={{ width: "100%", height: 52, objectFit: "cover", borderRadius: 6, marginTop: 4 }} />
+                <div style={{ position: "relative", marginTop: 4 }}>
+                  <img src={form.foto_fin_url} alt="fin"
+                    onClick={() => setLightbox(form.foto_fin_url)}
+                    style={{ width: "100%", height: 72, objectFit: "cover", borderRadius: 6, cursor: "zoom-in" }} />
+                  <ZoomIn size={14} style={{ position: "absolute", bottom: 4, right: 4, color: "#fff", opacity: 0.8, pointerEvents: "none" }} />
+                </div>
               )}
             </div>
           </div>
+
+          {/* Lightbox */}
+          {lightbox && (
+            <div onClick={() => setLightbox(null)} style={{
+              position: "fixed", inset: 0, zIndex: 200,
+              background: "rgba(0,0,0,.92)", display: "flex",
+              alignItems: "center", justifyContent: "center", cursor: "zoom-out",
+            }}>
+              <img src={lightbox} alt="foto" style={{ maxWidth: "95vw", maxHeight: "90vh", borderRadius: 8, objectFit: "contain" }} />
+            </div>
+          )}
 
           {/* Total recorrido */}
           {kmTotal !== null && (
@@ -377,6 +404,7 @@ export default function TrayectosPage() {
   const [filterSem, setFilterSem] = useState<number | "">("");
   const [filterEst, setFilterEst] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   // Sync filters from URL params (sidebar/chips navigation)
   useEffect(() => {
@@ -420,12 +448,8 @@ export default function TrayectosPage() {
     const sb = createClient();
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return;
-
-    if (data.id) {
-      await sb.from("cr_trayectos").update({ ...data, conductor_id: user.id }).eq("id", data.id);
-    } else {
-      await sb.from("cr_trayectos").insert({ ...data, conductor_id: user.id });
-    }
+    // upsert: inserta si el id no existe, actualiza si ya existe
+    await sb.from("cr_trayectos").upsert({ ...data, conductor_id: user.id });
     setModal(undefined);
     await load();
   }, []);
@@ -519,7 +543,7 @@ export default function TrayectosPage() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--glass-border)" }}>
-                    {["Fecha", "Sem.", "Origen → Destino", "Km", "Valor", "Extras", "Factura", "Estado", ""].map((h) => (
+                    {["Fecha", "Sem.", "Origen → Destino", "Km", "Fotos", "Valor", "Extras", "Factura", "Estado", ""].map((h) => (
                       <th key={h} style={{
                         padding: "12px 14px", textAlign: "left",
                         fontSize: 12, fontWeight: 600, color: "var(--text-tertiary)",
@@ -536,6 +560,26 @@ export default function TrayectosPage() {
                       <td style={{ padding: "12px 14px", fontSize: 13, color: "var(--text-secondary)" }}>S{t.semana}</td>
                       <td style={{ padding: "12px 14px", fontSize: 13 }}>{t.origen} → {t.destino}</td>
                       <td style={{ padding: "12px 14px", fontSize: 13, color: "var(--text-secondary)" }}>{t.km ?? "—"}</td>
+                      <td style={{ padding: "8px 14px" }}>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          {t.foto_ini_url ? (
+                            <img src={t.foto_ini_url} alt="ini" onClick={() => setLightbox(t.foto_ini_url!)}
+                              title="Foto inicio odómetro"
+                              style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, cursor: "zoom-in", border: "1px solid rgba(0,230,118,.3)" }} />
+                          ) : (
+                            <span title="Sin foto inicio" style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center",
+                              borderRadius: 4, border: "1px dashed rgba(255,255,255,.1)", color: "var(--text-tertiary)", fontSize: 14 }}>📷</span>
+                          )}
+                          {t.foto_fin_url ? (
+                            <img src={t.foto_fin_url} alt="fin" onClick={() => setLightbox(t.foto_fin_url!)}
+                              title="Foto fin odómetro"
+                              style={{ width: 36, height: 36, objectFit: "cover", borderRadius: 4, cursor: "zoom-in", border: "1px solid rgba(0,230,118,.3)" }} />
+                          ) : (
+                            <span title="Sin foto fin" style={{ width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center",
+                              borderRadius: 4, border: "1px dashed rgba(255,255,255,.1)", color: "var(--text-tertiary)", fontSize: 14 }}>📷</span>
+                          )}
+                        </div>
+                      </td>
                       <td style={{ padding: "12px 14px", fontSize: 13, fontWeight: 600, color: "var(--accent-green)", whiteSpace: "nowrap" }}>
                         {formatCurrency(t.valor)}
                       </td>
@@ -582,6 +626,19 @@ export default function TrayectosPage() {
                     {t.estado === "rechazado" && t.motivo_rechazo && (
                       <p style={{ fontSize: 11, color: "#FF4444", margin: "4px 0 0", fontStyle: "italic" }}>Motivo: {t.motivo_rechazo}</p>
                     )}
+                    {/* Miniaturas fotos odómetro */}
+                    {(t.foto_ini_url || t.foto_fin_url) && (
+                      <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                        {t.foto_ini_url && (
+                          <img src={t.foto_ini_url} alt="km ini" onClick={() => setLightbox(t.foto_ini_url!)}
+                            style={{ width: 48, height: 36, objectFit: "cover", borderRadius: 4, cursor: "zoom-in", border: "1px solid rgba(0,230,118,.3)" }} />
+                        )}
+                        {t.foto_fin_url && (
+                          <img src={t.foto_fin_url} alt="km fin" onClick={() => setLightbox(t.foto_fin_url!)}
+                            style={{ width: 48, height: 36, objectFit: "cover", borderRadius: 4, cursor: "zoom-in", border: "1px solid rgba(0,230,118,.3)" }} />
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div style={{ textAlign: "right", marginLeft: 12 }}>
                     <div style={{ fontSize: 16, fontWeight: 700, color: "var(--accent-green)" }}>
@@ -610,6 +667,19 @@ export default function TrayectosPage() {
       <button className="fab-btn" onClick={() => setModal(null)}>
         <Plus size={22} />
       </button>
+
+      {/* Lightbox global */}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)} style={{
+          position: "fixed", inset: 0, zIndex: 300,
+          background: "rgba(0,0,0,.92)", display: "flex",
+          alignItems: "center", justifyContent: "center", cursor: "zoom-out",
+        }}>
+          <img src={lightbox} alt="foto odómetro"
+            style={{ maxWidth: "95vw", maxHeight: "90vh", borderRadius: 8, objectFit: "contain" }} />
+          <span style={{ position: "absolute", top: 16, right: 20, fontSize: 28, color: "#fff", cursor: "pointer", lineHeight: 1 }}>×</span>
+        </div>
+      )}
 
       {modal !== undefined && (
         <TrayectoModal
